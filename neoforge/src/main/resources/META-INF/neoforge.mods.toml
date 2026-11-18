@@ -1,0 +1,26 @@
+modLoader = "javafml"
+loaderVersion = "${neoforge_loader_version_range}"
+issueTrackerURL = "https://github.com/JsMacrosCE/JsMacros/issues"
+license = "MPL-2.0"
+
+[[mixins]]
+config="jsmacrosce-common.mixins.json"
+
+[[mixins]]
+config="jsmacrosce-neoforge.mixins.json"
+
+[[mods]]
+modId = "jsmacrosce"
+version = "${version}"
+displayName = "JS Macros Community Edition"
+authors = "East_Arctica, Wagyourtail"
+description = '''
+    Javascript Macros for NeoForge
+'''
+
+[[dependencies.jsmacrosce]]
+modId = "minecraft"
+type = "required"
+versionRange = "${neoforge_minecraft_version_range}"
+ordering = "NONE"
+side = "BOTH"

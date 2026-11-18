@@ -1,0 +1,66 @@
+name: Dev Build
+
+on:
+  push:
+    branches: ['main']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  JAVA_VERSION: '25'
+  MODRINTH_PROJECT: 2m9WfquA
+  MOD_ID: jsmacrosce
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-overwrite-existing: true
+
+      # createDist renders the VitePress site, so npm must be available.
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs/vitepress/package-lock.json
+
+      - name: Compute versions
+        id: versions
+        shell: bash
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          MOD_VERSION=$(./gradlew -q printVersion -Pchannel=dev -Pbuild_sha=${SHORT_SHA} | tail -1 | tr -d '\n\r')
+          echo "mod_version=${MOD_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to GitHub
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          ./gradlew publishMods -Pchannel=dev -Pbuild_sha=${SHORT_SHA}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v7
+        with:
+          name: dev-dist-${{ steps.versions.outputs.mod_version }}
+          path: dist/**/*

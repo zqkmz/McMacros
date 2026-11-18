@@ -1,0 +1,50 @@
+# gradle
+
+.gradle/
+build/
+out/
+build/classes/
+dist/
+
+# idea
+
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# vscode
+
+.settings/
+.vscode/
+bin/
+.classpath
+.project
+eclipse
+
+# fabric
+
+run/
+runs/
+*.launch
+
+# javadoc
+
+doc/
+*.log
+*.log.gz
+
+# The mixin configurations are written from their json5 sources at build time.
+*.mixins.json
+
+docs/web/[0-9]*
+
+/META-INF/
+
+# Affinity Photo
+*.af~lock~
+*.af~lock~:com.dropbox.ignored
+
+# General working dir for anything that is needed during development
+working/
+.opencode/

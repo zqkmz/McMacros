@@ -1,0 +1,2064 @@
+package com.jsmacrosce.doclet.core.render;
+
+import com.jsmacrosce.FileHandler;
+import com.jsmacrosce.MarkdownBuilder;
+import com.jsmacrosce.doclet.DocletIgnore;
+import com.jsmacrosce.doclet.core.ClassGroup;
+import com.jsmacrosce.doclet.core.model.ClassDoc;
+import com.jsmacrosce.doclet.core.model.DocBodyNode;
+import com.jsmacrosce.doclet.core.model.DocComment;
+import com.jsmacrosce.doclet.core.model.DocTag;
+import com.jsmacrosce.doclet.core.model.DocTagKind;
+import com.jsmacrosce.doclet.core.model.DocletModel;
+import com.jsmacrosce.doclet.core.model.MemberDoc;
+import com.jsmacrosce.doclet.core.model.MemberKind;
+import com.jsmacrosce.doclet.core.model.PackageDoc;
+import com.jsmacrosce.doclet.core.model.ParamDoc;
+import com.jsmacrosce.doclet.core.model.ScriptNamespaceDoc;
+import com.jsmacrosce.doclet.core.model.TypeKind;
+import com.jsmacrosce.doclet.core.model.TypeRef;
+import com.jsmacrosce.doclet.core.util.DocBodyRenderer;
+import com.jsmacrosce.doclet.core.util.ExternalTypeLinks;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+
+import javax.annotation.Nullable;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@DocletIgnore
+public class MarkdownWriter {
+    /**
+     * Controls how one generated page tree is rendered. Both flavours describe the
+     * same model and share every traversal; only markup and VitePress-only
+     * decoration differ.
+     */
+    public enum Flavor {
+        /** VitePress source: linked, highlighted signatures and page metadata. */
+        VITEPRESS,
+        /**
+         * Plain markdown for agents and other machine readers: the same pages and
+         * prose without raw HTML, VitePress containers, or site-only metadata.
+         */
+        PLAIN
+    }
+
+    private static final String DEFAULT_CATEGORY = "Uncategorized";
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
+    /** A release version at the start of {@code @since}, with any trailing history. */
+    private static final Pattern SINCE_VERSION = Pattern.compile("^(\\d+(?:\\.\\d+)*)\\s*[,;:]?\\s*(.*)$", Pattern.DOTALL);
+
+    /** One-line orientation shown under a generated category heading. */
+    private static final Map<String, String> CLASS_CATEGORY_COPY = Map.ofEntries(
+        Map.entry("Commands", "Builders for client-side commands and argument suggestions."),
+        Map.entry("Configuration/Profiles", "Profiles, options, and the configuration objects behind them."),
+        Map.entry("Entity Helpers", "Typed wrappers for entities and their attributes."),
+        Map.entry("Event Filterers", "Reusable conditions that decide whether a listener receives an event."),
+        Map.entry("Events and Event Handling", "The base types and handles used to receive and control events."),
+        Map.entry("Filters/Predicates", "Comparison and grouping filters used to build world scanners."),
+        Map.entry("Inventory", "Views of the player's inventory and open containers."),
+        Map.entry("Items/Enchantments", "Item stacks, item definitions, recipes, and enchantments."),
+        Map.entry("Misc Helpers", "Small wrappers and utilities shared by other APIs."),
+        Map.entry("Rendering/Graphics", "2D overlays, 3D world rendering, and drawing primitives."),
+        Map.entry("Screen and UI Elements", "Script-created screens, widgets, and input controls.")
+    );
+
+    private static final Map<String, String> EVENT_CATEGORY_COPY = Map.ofEntries(
+        Map.entry("Core", "Events raised by JsMacros itself rather than by the game."),
+        Map.entry("Inputs/Interactions", "Keyboard, mouse, block, entity, and sign interactions."),
+        Map.entry("Inventory", "Container contents, slot changes, pickups, and item damage."),
+        Map.entry("Network/Chat", "Chat, packets, server joins, disconnects, and player-list changes."),
+        Map.entry("Player/Stats", "Health, hunger, air, armor, effects, death, and riding changes."),
+        Map.entry("Render/UI", "Titles, boss bars, opened screens, and editor code-render hooks."),
+        Map.entry("System/Lifecycle", "Game launch and quit, resource packs, and command context."),
+        Map.entry("World", "Blocks, chunks, dimensions, entities, sounds, and ticks.")
+    );
+    private final Map<String, ClassDoc> classByQualifiedName = new HashMap<>();
+    private final Map<String, List<ClassDoc>> classByName = new HashMap<>();
+    private final Map<String, List<ClassDoc>> classByAlias = new HashMap<>();
+    /** Package name → base Javadoc URL for external (non-project) types, e.g. "java.util" → "https://…". */
+    private Map<String, String> externalPackages = Map.of();
+    private String version;
+    private String minecraftVersion;
+    private String routePrefix;
+    private List<ScriptNamespaceDoc> scriptNamespaces = List.of();
+    private final Flavor flavor;
+
+    /** Writes VitePress source. */
+    public MarkdownWriter() {
+        this(Flavor.VITEPRESS);
+    }
+
+    public MarkdownWriter(Flavor flavor) {
+        this.flavor = flavor;
+    }
+
+    private boolean isPlain() {
+        return flavor == Flavor.PLAIN;
+    }
+
+    /**
+     * Provides a map of Java package names to their external Javadoc base URLs
+     * (as produced by the {@code -link} option).  Must be called before {@link #write}.
+     */
+    public void setExternalPackages(Map<String, String> externalPackages) {
+        this.externalPackages = externalPackages == null ? Map.of() : externalPackages;
+    }
+
+    public void write(DocletModel model, File outDir, String version, String mcVersion) throws IOException {
+        this.version = version;
+        this.minecraftVersion = mcVersion;
+        this.routePrefix = version + "/" + mcVersion;
+        this.scriptNamespaces = model.scriptNamespaces();
+        indexClasses(model);
+        Map<String, List<ClassDoc>> classCategories = groupByCategory(model, ClassGroup.Class);
+        Map<String, List<ClassDoc>> eventCategories = groupByCategory(model, ClassGroup.Event);
+        Map<String, List<ClassDoc>> libraryCategories = groupByCategory(model, ClassGroup.Library);
+        List<SidebarEntry> typeEntries = new ArrayList<>();
+        for (var namespace : scriptNamespaces) {
+            typeEntries.add(new SidebarItem(namespace.name(), "/" + routePrefix + "/types/" + namespace.name()));
+        }
+        SidebarData sidebarData = new SidebarData(
+            version,
+            mcVersion,
+            mapToSidebarCategories(classCategories, routePrefix),
+            mapToSidebarCategories(eventCategories, routePrefix),
+            mapToSidebarCategories(libraryCategories, routePrefix),
+            typeEntries
+        );
+
+        for (PackageDoc pkg : model.packages()) {
+            for (ClassDoc clz : pkg.classes()) {
+                File out = new File(outDir, classPath(clz) + ".md");
+                File parent = out.getParentFile();
+                if (!parent.exists() && !parent.mkdirs()) {
+                    throw new IOException("Failed to create package dir " + parent);
+                }
+                new FileHandler(out).write(renderClass(clz));
+            }
+        }
+
+        writeGroupIndexes(model, outDir, version, mcVersion, classCategories, eventCategories, libraryCategories);
+        writeTypeIndex(outDir);
+        // Namespace pages are indexes of existing API pages, not duplicate class declarations.
+        for (var namespace : scriptNamespaces) {
+            MarkdownBuilder md = new MarkdownBuilder();
+            siteFrontmatter(md, null, namespaceDescription(namespace));
+            md.heading(1, namespace.name());
+            md.paragraph(formatDescription(namespace.docComment(), null));
+            md.paragraph("These names are available in JavaScript and Python without importing anything. "
+                + "They are read-only aliases of Java types, so `instanceof` works as usual.");
+            StringBuilder table = new StringBuilder();
+            table.append("| Script name | What it is |\n");
+            table.append("| --- | --- |\n");
+            for (var export : namespace.exports()) {
+                ClassDoc target = classByQualifiedName.get(export.target().qualifiedName());
+                if (target == null) throw new IllegalArgumentException("Undocumented script export: " + export.target().qualifiedName());
+                table.append("| [").append(MarkdownBuilder.codeSpan(namespace.name() + "." + export.name()))
+                    .append("](").append(buildLinkUrl(target, null, null)).append(")")
+                    .append(" | ").append(escapeTableCell(summary(target))).append(" |\n");
+            }
+            md.paragraph(table.toString());
+            File directory = new File(outDir, "types");
+            java.nio.file.Files.createDirectories(directory.toPath());
+            new FileHandler(new File(directory, namespace.name() + ".md")).write(md.toString());
+        }
+        if (!isPlain()) {
+            writeSidebarData(outDir, sidebarData);
+        }
+    }
+
+    private void writeTypeIndex(File outDir) throws IOException {
+        if (scriptNamespaces.isEmpty()) {
+            return;
+        }
+        MarkdownBuilder md = new MarkdownBuilder();
+        siteFrontmatter(md, "false",
+            "Stable script names for Java types in the JsMacrosCE API for Minecraft " + minecraftVersion
+                + ". Scripts use them for instanceof and static access without an import.");
+        md.heading(1, "Type namespaces");
+        md.paragraph("JavaScript and Python scripts get these globals automatically. They are read-only "
+            + "aliases of real Java types, so `instanceof` and `isinstance` work without a package name. "
+            + "They do not change which helper a factory returns; check the object you actually received.");
+        StringBuilder table = new StringBuilder();
+        table.append("| Namespace | What it is | Types |\n");
+        table.append("| --- | --- | --- |\n");
+        for (var namespace : scriptNamespaces) {
+            table.append("| ").append(MarkdownBuilder.link(namespace.name(), "./" + namespace.name() + ".md"))
+                .append(" | ").append(escapeTableCell(summary(namespace.docComment())))
+                .append(" | ").append(namespace.exports().size()).append(" |\n");
+        }
+        md.paragraph(table.toString());
+        File directory = new File(outDir, "types");
+        java.nio.file.Files.createDirectories(directory.toPath());
+        new FileHandler(new File(directory, "index.md")).write(md.toString());
+    }
+
+    private String classPath(ClassDoc clz) {
+        String pkgPath = clz.packageName().replace('.', '/');
+        String namePath = clz.name().replace('$', '.');
+        String basePath = pkgPath.isEmpty() ? namePath : pkgPath + "/" + namePath;
+        String groupPrefix = groupPathPrefix(clz);
+        return groupPrefix.isEmpty() ? basePath : groupPrefix + "/" + basePath;
+    }
+
+    private String groupPathPrefix(ClassDoc clz) {
+        return switch (clz.group()) {
+            case Event -> "events";
+            case Class -> "classes";
+            case Library -> "libraries";
+        };
+    }
+
+    private void writeGroupIndexes(
+        DocletModel model,
+        File outDir,
+        String version,
+        String mcVersion,
+        Map<String, List<ClassDoc>> classCategories,
+        Map<String, List<ClassDoc>> eventCategories,
+        Map<String, List<ClassDoc>> libraryCategories
+    ) throws IOException {
+        Map<ClassGroup, List<ClassDoc>> grouped = new java.util.HashMap<>();
+        for (PackageDoc pkg : model.packages()) {
+            for (ClassDoc clz : pkg.classes()) {
+                grouped.computeIfAbsent(clz.group(), key -> new ArrayList<>()).add(clz);
+            }
+        }
+        grouped.values().forEach(list ->
+            list.sort(Comparator.comparing(ClassDoc::qualifiedName, String.CASE_INSENSITIVE_ORDER))
+        );
+
+        new FileHandler(new File(outDir, "index.md"))
+            .write(renderOverview(grouped, version, mcVersion));
+        new FileHandler(new File(outDir, "libraries.md"))
+            .write(renderGroupPage("Libraries", grouped.getOrDefault(ClassGroup.Library, List.of()), libraryCategories));
+        new FileHandler(new File(outDir, "events.md"))
+            .write(renderGroupPage("Events", grouped.getOrDefault(ClassGroup.Event, List.of()), eventCategories));
+        new FileHandler(new File(outDir, "classes.md"))
+            .write(renderGroupPage("Classes", grouped.getOrDefault(ClassGroup.Class, List.of()), classCategories));
+    }
+
+    private String renderOverview(Map<ClassGroup, List<ClassDoc>> grouped, String version, String mcVersion) {
+        MarkdownBuilder md = new MarkdownBuilder();
+        siteFrontmatter(md, "false", "JsMacrosCE script API reference for Minecraft " + mcVersion
+            + ": the global libraries, game events, the classes they return, and script type names.");
+        md.heading(1, "JsMacros API Reference");
+        md.paragraph(
+            "Version: " + MarkdownBuilder.codeSpan(version) + "  \n"
+            + "Minecraft: " + MarkdownBuilder.codeSpan(mcVersion)
+        );
+        md.paragraph("This reference is generated from the sources for this Minecraft target. "
+            + "Signatures, raw Minecraft types, and behavior can differ between versions; the version "
+            + "selector in the navigation bar opens another target. New to JsMacros? Start with the "
+            + MarkdownBuilder.link("Guide", "/guide/") + ".");
+
+        md.heading(2, "Start here");
+        long libraryCount = grouped.getOrDefault(ClassGroup.Library, List.of()).stream().filter(this::isGlobalLibrary).count();
+        md.bulletItem("**" + MarkdownBuilder.link("Libraries", "./libraries.md") + " (" + libraryCount + ")** — "
+            + "The global objects a script starts with: `Chat`, `World`, `Player`, `Hud`, `JsMacros`, and more.");
+        md.bulletItem("**" + MarkdownBuilder.link("Events", "./events.md") + " ("
+            + grouped.getOrDefault(ClassGroup.Event, List.of()).size() + ")** — "
+            + "Typed signals from the game. Subscribe with `JsMacros.on`, wait with `waitForEvent`, and read each event page for its payload and cancellation rules.");
+        md.bulletItem("**" + MarkdownBuilder.link("Classes", "./classes.md") + " ("
+            + grouped.getOrDefault(ClassGroup.Class, List.of()).size() + ")** — "
+            + "Objects returned by libraries and events: entities, blocks, inventories, draw elements, screens, and builders.");
+        if (!scriptNamespaces.isEmpty()) {
+            md.bulletItem("**" + MarkdownBuilder.link("Type namespaces", "./types/index.md") + " ("
+                + scriptNamespaces.size() + ")** — "
+                + "Stable script names for Java types, such as `EntityHelpers.Horse`. They are for `instanceof` and static access, not a second class list.");
+        }
+
+        List<String> common = List.of("Chat", "World", "Player", "Hud", "JsMacros", "KeyBind");
+        List<ClassDoc> entryPoints = new ArrayList<>();
+        for (String alias : common) {
+            List<ClassDoc> matches = classByAlias.get(alias);
+            if (matches != null && !matches.isEmpty()) entryPoints.add(matches.getFirst());
+        }
+        if (!entryPoints.isEmpty()) {
+            md.heading(2, "Common entry points");
+            for (ClassDoc clz : entryPoints) {
+                String line = MarkdownBuilder.link(displayTitle(clz), "./" + classPath(clz) + ".md");
+                String summary = summary(clz);
+                md.bulletItem(line + (summary.isEmpty() ? "" : " — " + summary));
+            }
+        }
+
+        md.heading(2, "How to read a page");
+        md.bulletItem("The large title is the script name. The small monospace line is the fully qualified Java name used by `Java.type` and reflection.");
+        md.bulletItem("`read-only` marks a field you should not write. It is not a constant and can still change over time.");
+        md.bulletItem("`Since` is the JsMacros version that introduced the member, not the Minecraft version.");
+        md.bulletItem("Overloads share a heading but keep separate signatures and descriptions. Read the parameters to choose one.");
+        md.bulletItem("A compatibility stub can exist on a target without the full behavior. Read the description, not just the signature.");
+
+        if (!scriptNamespaces.isEmpty()) {
+            md.heading(2, "Script type namespaces");
+            md.paragraph("JavaScript and Python scripts get these globals automatically. They are read-only aliases of real Java types, "
+                + "so `instanceof` and `isinstance` work without a package name.");
+            for (var namespace : scriptNamespaces) {
+                String summary = summary(namespace.docComment());
+                md.bulletItem(MarkdownBuilder.link(namespace.name(), "./types/" + namespace.name() + ".md")
+                    + " (" + namespace.exports().size() + ")" + (summary.isEmpty() ? "" : " — " + summary));
+            }
+        }
+        return md.toString();
+    }
+
+    private String renderGroupPage(String title, List<ClassDoc> classes, Map<String, List<ClassDoc>> categories) {
+        MarkdownBuilder md = new MarkdownBuilder();
+        siteFrontmatter(md, "false", groupDescription(title));
+        md.heading(1, title);
+        md.paragraph(groupIntro(title));
+        if ((categories == null || categories.isEmpty()) && classes.isEmpty()) {
+            md.paragraph("No entries found.");
+            return md.toString();
+        }
+        if (categories != null && !categories.isEmpty()) {
+            for (Map.Entry<String, List<ClassDoc>> entry : categories.entrySet()) {
+                if (!entry.getKey().equals(DEFAULT_CATEGORY) || categories.size() > 1) {
+                    md.heading(3, entry.getKey().equals(DEFAULT_CATEGORY) ? "Other " + title.toLowerCase(Locale.ROOT) : entry.getKey());
+                }
+                String copy = categoryCopy(title, entry.getKey());
+                if (copy != null) {
+                    md.paragraph(copy);
+                }
+                renderGroupEntries(entry.getValue(), md);
+            }
+            return md.toString();
+        }
+        renderGroupEntries(classes, md);
+        return md.toString();
+    }
+
+    private String groupIntro(String title) {
+        return switch (title) {
+            case "Libraries" -> "Libraries are the globals a script starts with. Most scripts call a library first, then follow the returned object into a class. "
+                + "Nested entries are supporting types, not additional globals.";
+            case "Events" -> "Events are typed signals from the game. Subscribe with `JsMacros.on`, wait with `JsMacros.waitForEvent`, "
+                + "and read each event page for its payload and cancellation rules. High-frequency events such as `Tick` and packet events need tight filtering.";
+            case "Classes" -> "Classes are the objects libraries and events return: entities, blocks, inventories, draw elements, screens, and builders. "
+                + "Follow a library method's return type into its class. Constructors are shown only for types scripts are meant to construct.";
+            default -> "";
+        };
+    }
+
+    private String categoryCopy(String title, String category) {
+        if (DEFAULT_CATEGORY.equals(category)) return null;
+        if (title.equals("Classes")) return CLASS_CATEGORY_COPY.get(category);
+        if (title.equals("Events")) return EVENT_CATEGORY_COPY.get(category);
+        return null;
+    }
+
+    private void renderGroupEntries(List<ClassDoc> entries, MarkdownBuilder md) {
+        if (entries == null || entries.isEmpty()) {
+            md.paragraph("No entries found.");
+            return;
+        }
+        StringBuilder list = new StringBuilder();
+        for (SidebarEntryBuilder root : buildEntryTree(entries)) {
+            renderIndexEntry(root, null, 0, list);
+        }
+        md.paragraph(list.toString().stripTrailing());
+    }
+
+    private void renderIndexEntry(SidebarEntryBuilder entry, ClassDoc parent, int depth, StringBuilder list) {
+        ClassDoc clz = entry.classDoc();
+        list.append("  ".repeat(depth)).append("- ")
+            .append(MarkdownBuilder.link(displayLabel(clz, parent), "./" + classPath(clz) + ".md"));
+        String summary = summary(clz);
+        if (!summary.isEmpty()) {
+            list.append(" — ").append(summary);
+        }
+        list.append('\n');
+        for (SidebarEntryBuilder child : entry.children()) {
+            renderIndexEntry(child, clz, depth + 1, list);
+        }
+    }
+
+    private boolean hasAlias(ClassDoc clz) {
+        return clz.alias() != null && !clz.alias().isBlank();
+    }
+
+    private Map<String, List<ClassDoc>> groupByCategory(DocletModel model, ClassGroup targetGroup) {
+        Map<String, List<ClassDoc>> categories = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (PackageDoc pkg : model.packages()) {
+            for (ClassDoc clz : pkg.classes()) {
+                if (clz.group() != targetGroup) {
+                    continue;
+                }
+                String category = resolveCategory(clz, targetGroup);
+                categories.computeIfAbsent(category, key -> new ArrayList<>()).add(clz);
+            }
+        }
+        for (List<ClassDoc> list : categories.values()) {
+            list.sort(Comparator.comparing(this::sidebarSortKey, String.CASE_INSENSITIVE_ORDER));
+        }
+        return categories;
+    }
+
+    private String resolveCategory(ClassDoc clz, ClassGroup targetGroup) {
+        String category = clz.category();
+        if (category != null && !category.isBlank()) {
+            return category;
+        }
+
+        ClassDoc current = clz;
+        while (current != null) {
+            String parentQualifiedName = parentQualifiedName(current);
+            if (parentQualifiedName == null) {
+                break;
+            }
+            ClassDoc parent = classByQualifiedName.get(parentQualifiedName);
+            if (parent == null) {
+                break;
+            }
+            if (parent.group() == targetGroup && parent.category() != null && !parent.category().isBlank()) {
+                return parent.category();
+            }
+            current = parent;
+        }
+
+        return DEFAULT_CATEGORY;
+    }
+
+    private String sidebarSortKey(ClassDoc clz) {
+        return hasAlias(clz) ? clz.alias() : clz.name();
+    }
+
+    private List<SidebarCategory> mapToSidebarCategories(Map<String, List<ClassDoc>> categories, String version) {
+        List<SidebarCategory> sections = new ArrayList<>();
+        for (Map.Entry<String, List<ClassDoc>> entry : categories.entrySet()) {
+            List<SidebarEntry> items = buildSidebarEntries(entry.getValue(), version);
+            sections.add(new SidebarCategory(entry.getKey(), items));
+        }
+        return sections;
+    }
+
+    private List<SidebarEntry> buildSidebarEntries(List<ClassDoc> classes, String version) {
+        List<SidebarEntry> entries = new ArrayList<>();
+        for (SidebarEntryBuilder root : buildEntryTree(classes)) {
+            entries.add(toSidebarEntry(root, null, version));
+        }
+        return entries;
+    }
+
+    private List<SidebarEntryBuilder> buildEntryTree(List<ClassDoc> classes) {
+        Map<String, SidebarEntryBuilder> builders = new LinkedHashMap<>();
+        for (ClassDoc clz : classes) {
+            builders.put(clz.qualifiedName(), new SidebarEntryBuilder(clz));
+        }
+
+        List<SidebarEntryBuilder> roots = new ArrayList<>();
+        for (SidebarEntryBuilder builder : builders.values()) {
+            String parentQualifiedName = parentQualifiedName(builder.classDoc());
+            SidebarEntryBuilder parent = parentQualifiedName == null ? null : builders.get(parentQualifiedName);
+            if (parent == null) {
+                roots.add(builder);
+                continue;
+            }
+            parent.children().add(builder);
+        }
+
+        sortSidebarBuilders(roots);
+
+        return roots;
+    }
+
+    @Nullable
+    private String parentQualifiedName(ClassDoc clz) {
+        String name = clz.name();
+        int split = name.lastIndexOf('.');
+        if (split < 0) {
+            return null;
+        }
+        String parentName = name.substring(0, split);
+        if (parentName.isBlank()) {
+            return null;
+        }
+        return clz.packageName().isBlank() ? parentName : clz.packageName() + "." + parentName;
+    }
+
+    private void sortSidebarBuilders(List<SidebarEntryBuilder> builders) {
+        builders.sort(Comparator.comparing(builder -> sidebarSortKey(builder.classDoc()), String.CASE_INSENSITIVE_ORDER));
+        for (SidebarEntryBuilder builder : builders) {
+            sortSidebarBuilders(builder.children());
+        }
+    }
+
+    private SidebarEntry toSidebarEntry(SidebarEntryBuilder builder, ClassDoc parent, String version) {
+        String link = "/" + version + "/" + classPath(builder.classDoc());
+        if (builder.children().isEmpty()) {
+            return new SidebarItem(displayLabel(builder.classDoc(), parent), link);
+        }
+
+        List<SidebarEntry> childEntries = new ArrayList<>();
+        for (SidebarEntryBuilder child : builder.children()) {
+            childEntries.add(toSidebarEntry(child, builder.classDoc(), version));
+        }
+        return new SidebarNode(displayLabel(builder.classDoc(), parent), link, childEntries);
+    }
+
+    private String displayLabel(ClassDoc clz, ClassDoc parent) {
+        if (hasAlias(clz)) {
+            return clz.alias();
+        }
+        return parent != null && clz.name().startsWith(parent.name() + ".")
+            ? clz.name().substring(parent.name().length() + 1) : clz.name();
+    }
+
+    private void writeSidebarData(File outDir, SidebarData data) throws IOException {
+        new FileHandler(new File(outDir, "sidebar-data.json")).write(GSON.toJson(data));
+    }
+
+    private interface SidebarEntry {}
+    private record SidebarItem(String text, String link) implements SidebarEntry {}
+    private record SidebarNode(String name, String link, List<SidebarEntry> items) implements SidebarEntry {}
+    private record SidebarEntryBuilder(ClassDoc classDoc, List<SidebarEntryBuilder> children) {
+        private SidebarEntryBuilder(ClassDoc classDoc) {
+            this(classDoc, new ArrayList<>());
+        }
+    }
+    private record SidebarCategory(String name, List<SidebarEntry> items) {}
+    private record SidebarData(String version, String minecraftVersion, List<SidebarCategory> classes, List<SidebarCategory> events, List<SidebarCategory> libraries, List<SidebarEntry> types) {}
+
+    private String renderClass(ClassDoc clz) {
+        MarkdownBuilder md = new MarkdownBuilder();
+        siteFrontmatter(md, "deep", metaDescription(clz));
+        md.heading(1, displayTitle(clz));
+        if (isPlain()) {
+            md.paragraph(MarkdownBuilder.codeSpan(clz.qualifiedName()));
+        } else {
+            md.paragraph(wrapHtmlWithElemAndAttribs(clz.qualifiedName(), "span", "class=\"qualified-name\""));
+        }
+        renderClassMetadata(md, clz);
+
+        String desc = formatDescription(clz.docComment(), clz);
+        String descText = desc.isEmpty() ? "TODO: No description supplied\n" : desc;
+        md.paragraph(descText);
+        for (var namespace : scriptNamespaces) {
+            for (var export : namespace.exports()) {
+                if (export.target().qualifiedName().equals(clz.qualifiedName())) {
+                    md.paragraph("Available in scripts as " + MarkdownBuilder.codeSpan(namespace.name() + "." + export.name()) + ".");
+                }
+            }
+        }
+        renderClassTypeParameters(md, clz);
+        if (clz.group() == ClassGroup.Event) {
+            renderEventFilterer(md, clz);
+        }
+        if (isGlobalLibrary(clz)) {
+            md.paragraph("Accessible in scripts via the global " + MarkdownBuilder.codeSpan(clz.alias()) + " variable.");
+        } else {
+            ClassDoc parent = classByQualifiedName.get(parentQualifiedName(clz));
+            if (parent != null) {
+                md.paragraph("Nested type declared in " + MarkdownBuilder.link(displayTitle(parent), buildLinkUrl(parent, null, clz))
+                    + (clz.group() == ClassGroup.Library ? "; not a separate global library." : "."));
+            }
+        }
+
+        List<ClassDoc> nested = classByQualifiedName.values().stream()
+            .filter(child -> clz.qualifiedName().equals(parentQualifiedName(child)))
+            .sorted(Comparator.comparing(ClassDoc::name, String.CASE_INSENSITIVE_ORDER)).toList();
+        if (!nested.isEmpty()) {
+            md.heading(2, "Nested types");
+            for (ClassDoc child : nested) {
+                md.bulletItem(MarkdownBuilder.link(displayLabel(child, clz), buildLinkUrl(child, null, clz)));
+            }
+        }
+
+        // Only global library objects hide their constructors; supporting types are classes.
+        if (!isGlobalLibrary(clz)) {
+            renderMemberSection(md, clz, MemberKind.CONSTRUCTOR, "Constructors");
+        }
+        renderMemberSection(md, clz, MemberKind.FIELD, "Fields");
+        renderMemberSection(md, clz, MemberKind.METHOD, "Methods");
+        return md.toString();
+    }
+
+    /**
+     * Renders the compact fact strip under a class name: the release that introduced the
+     * type and, for events, whether {@code event.cancel()} is available. These facts apply
+     * to the whole page, so they sit above the prose instead of being repeated in it.
+     */
+    private void renderClassMetadata(MarkdownBuilder md, ClassDoc clz) {
+        if (isPlain()) {
+            renderClassMetadataPlain(md, clz);
+            return;
+        }
+        List<String> pills = new ArrayList<>();
+        SinceInfo since = sinceInfo(clz.docComment(), clz);
+        if (since.version() != null) {
+            pills.add(sincePill(since.version()));
+        }
+        if (clz.group() == ClassGroup.Event) {
+            if (clz.eventCancellableDynamic()) {
+                pills.add(pill("api-pill-conditional", "Cancellable per instance",
+                    "Whether this event can be cancelled depends on the instance; check the fields below."));
+            } else if (clz.eventCancellable()) {
+                pills.add(pill("api-pill-cancellable", "Cancellable",
+                    "Call event.cancel() in a handler before releasing the event lock."));
+            } else {
+                pills.add(pill("api-pill-neutral", "Not cancellable",
+                    "Calling event.cancel() throws UnsupportedOperationException."));
+            }
+        }
+        if (!pills.isEmpty()) {
+            md.paragraph("<div class=\"api-meta\">" + String.join("", pills) + "</div>");
+        }
+        if (since.detail() != null && !since.detail().isBlank()) {
+            md.paragraph("<p class=\"api-meta-note\">Note: " + since.detail() + "</p>");
+        }
+    }
+
+    /**
+     * The plain flavour keeps the same facts but writes them as ordinary bold labels
+     * instead of pills, so a generic Markdown reader shows text rather than HTML.
+     */
+    private void renderClassMetadataPlain(MarkdownBuilder md, ClassDoc clz) {
+        SinceInfo since = sinceInfoPlain(clz.docComment(), clz);
+        if (since.version() != null) {
+            md.paragraph("**Since:** " + since.version());
+        }
+        if (clz.group() == ClassGroup.Event) {
+            if (clz.eventCancellableDynamic()) {
+                md.paragraph("**Cancellable:** Per instance. Whether this event can be cancelled depends "
+                    + "on the instance; check the fields below.");
+            } else if (clz.eventCancellable()) {
+                md.paragraph("**Cancellable:** Yes. Call `event.cancel()` in a handler before releasing "
+                    + "the event lock.");
+            } else {
+                md.paragraph("**Cancellable:** No. Calling `event.cancel()` throws "
+                    + "`UnsupportedOperationException`.");
+            }
+        }
+        if (since.detail() != null && !since.detail().isBlank()) {
+            md.paragraph("**Note:** " + since.detail());
+        }
+    }
+
+    /**
+     * Shows the filterer an event accepts and the call that creates one. This is usage
+     * guidance rather than a one-glance fact, so it stays in prose below the metadata strip.
+     */
+    private void renderEventFilterer(MarkdownBuilder md, ClassDoc clz) {
+        String filtererName = clz.eventFilterer();
+        if (filtererName != null && !filtererName.isBlank()) {
+            ClassDoc filterer = findClassByName(filtererName);
+            String filtererLink = filterer == null
+                ? MarkdownBuilder.codeSpan(filtererName)
+                : MarkdownBuilder.link(filterer.name(), buildLinkUrl(filterer, null, clz));
+            md.paragraph("**Filterer:** " + filtererLink + ". Create it with "
+                + MarkdownBuilder.codeSpan("JsMacros.createEventFilterer(\"" + displayTitle(clz) + "\")")
+                + " and pass it to the filterer overload of `JsMacros.on`.");
+        }
+    }
+
+    /**
+     * Splits a {@code @since} tag into the release that belongs in a pill and any trailing
+     * history such as an old name. Long sentences in a pill make signatures hard to scan,
+     * so the explanation is rendered as a note next to it instead.
+     */
+    private SinceInfo sinceInfo(DocComment comment, ClassDoc context) {
+        return splitSince(getTagTextAsHtml(comment, DocTagKind.SINCE, context).trim());
+    }
+
+    private SinceInfo sinceInfoPlain(DocComment comment, ClassDoc context) {
+        return splitSince(getTagText(comment, DocTagKind.SINCE, context).trim());
+    }
+
+    private SinceInfo splitSince(String text) {
+        if (text.isEmpty()) {
+            return SinceInfo.EMPTY;
+        }
+        Matcher matcher = SINCE_VERSION.matcher(text);
+        if (!matcher.matches()) {
+            return new SinceInfo(text, null);
+        }
+        String detail = matcher.group(2).trim();
+        if (detail.startsWith("(") && detail.endsWith(")")) {
+            detail = detail.substring(1, detail.length() - 1).trim();
+        }
+        return new SinceInfo(matcher.group(1), detail.isEmpty() ? null : detail);
+    }
+
+    private static String sincePill(String version) {
+        return "<span class=\"api-pill api-pill-since\">"
+            + "<span class=\"api-pill-label\">Since</span>"
+            + "<span class=\"api-pill-value\">" + version + "</span></span>";
+    }
+
+    private static String pill(String variant, String text, String title) {
+        StringBuilder html = new StringBuilder("<span class=\"api-pill ").append(variant).append('"');
+        if (title != null) {
+            html.append(" title=\"").append(title).append('"');
+        }
+        return html.append('>').append(text).append("</span>").toString();
+    }
+
+    private record SinceInfo(String version, String detail) {
+        private static final SinceInfo EMPTY = new SinceInfo(null, null);
+    }
+
+    @Nullable
+    private ClassDoc findClassByName(String name) {
+        List<ClassDoc> matches = classByName.get(name);
+        return matches == null || matches.isEmpty() ? null : matches.getFirst();
+    }
+
+    private void renderClassTypeParameters(MarkdownBuilder md, ClassDoc clz) {
+        if (clz.typeParams().isEmpty() || clz.docComment() == null) return;
+        if (isPlain()) {
+            List<String> rows = plainTypeParameterRows(clz.docComment(), clz.typeParams(), clz);
+            if (!rows.isEmpty()) {
+                md.heading(2, "Type Parameters");
+                for (String row : rows) {
+                    md.bulletItem(row);
+                }
+            }
+            return;
+        }
+        Map<String, String> descriptions = new LinkedHashMap<>();
+        for (DocTag tag : clz.docComment().tags()) {
+            if (tag.kind() == DocTagKind.TEMPLATE && tag.name() != null) {
+                descriptions.put(tag.name(), DocBodyRenderer.toHtml(tag.body(), link -> resolveLinkAsHtml(link, clz), true));
+            }
+        }
+        List<String> rows = new ArrayList<>();
+        for (TypeRef typeParam : clz.typeParams()) {
+            String description = descriptions.get(typeParam.name());
+            if (description != null && !description.isBlank()) {
+                rows.add("- <code>" + typeParam.name() + "</code>: " + description);
+            }
+        }
+        if (!rows.isEmpty()) {
+            md.heading(2, "Type Parameters");
+            md.paragraph(String.join("\n", rows));
+        }
+    }
+
+    private boolean isGlobalLibrary(ClassDoc clz) {
+        return clz.group() == ClassGroup.Library && hasAlias(clz);
+    }
+
+    private String displayTitle(ClassDoc clz) {
+        if ((clz.group() == ClassGroup.Event || clz.group() == ClassGroup.Library) && hasAlias(clz)) {
+            return clz.alias();
+        }
+        return clz.name();
+    }
+
+    private void renderMemberSection(MarkdownBuilder md, ClassDoc clz, MemberKind kind, String title) {
+        List<MemberDoc> members = clz.members().stream()
+            .filter(member -> member.kind() == kind)
+            .toList();
+        if (members.isEmpty()) {
+            return;
+        }
+        md.heading(2, title);
+
+        // Preserve declaration order while grouping by name so that overloads
+        // stay adjacent to where the first overload appears in the source.
+        LinkedHashMap<String, List<MemberDoc>> byName = new LinkedHashMap<>();
+        for (MemberDoc member : members) {
+            byName.computeIfAbsent(member.name(), k -> new ArrayList<>()).add(member);
+        }
+
+        for (List<MemberDoc> group : byName.values()) {
+            renderMemberGroup(md, group, clz);
+        }
+    }
+
+    /**
+     * Renders a named group of one or more members (overloads) under a single
+     * H3 heading followed by a unified HTML block.
+     *
+     * <p>Every member — whether alone or part of a true overload set — is
+     * rendered identically: the H3 carries only the bare name (plus a
+     * group-level anchor), and each member's signature and documentation body
+     * live inside a self-contained {@code <div class="overload-item">} element.
+     * Solo members therefore look exactly like individual overloads.
+     *
+     * <p>In addition to the group anchor on the H3, each {@code overload-item}
+     * receives an {@code id} derived from the member's {@code anchorId} so that
+     * deep links to a specific overload are possible.
+     */
+    private void renderMemberGroup(MarkdownBuilder md, List<MemberDoc> members, ClassDoc clz) {
+        if (isPlain()) {
+            renderPlainMemberGroup(md, members, clz);
+            return;
+        }
+        MemberDoc first = members.getFirst();
+        String groupName = first.kind() == MemberKind.CONSTRUCTOR
+            ? "new " + first.name()
+            : first.name();
+        // Use the first member's anchorId as the group anchor so that a field
+        // and a same-named method produce distinct H3 anchors ("joinable" vs
+        // "joinable-").  Fall back to the bare name only when anchorId is absent.
+        String groupSuffix = (first.anchorId() != null && !first.anchorId().isBlank())
+            ? first.anchorId()
+            : first.name();
+        String groupAnchor = clz.qualifiedName() + "_" + groupSuffix;
+        md.heading(3, groupName, groupAnchor);
+
+        StringBuilder html = new StringBuilder();
+        html.append("<div class=\"overload-list\">\n");
+        for (MemberDoc member : members) {
+            // Per-overload anchor for direct deep-linking.
+            String itemId = (member.anchorId() != null && !member.anchorId().isBlank())
+                ? clz.qualifiedName() + "_" + member.anchorId()
+                : null;
+            html.append("<div class=\"overload-item\"");
+            if (itemId != null) {
+                html.append(" id=\"").append(itemId).append("\"");
+            }
+            html.append(">\n");
+            html.append("<div class=\"overload-sig\">");
+            html.append("<code>")
+                .append(renderSignatureAsHtml(member, clz))
+                .append("</code>");
+            html.append("<span class=\"overload-badges\">");
+            SinceInfo memberSince = sinceInfo(member.docComment(), clz);
+            if (memberSince.version() != null) {
+                html.append(sincePill(memberSince.version()));
+            }
+            if (hasDeprecatedTag(member.docComment())) {
+                html.append("<Badge type=\"danger\" text=\"deprecated\" />");
+            }
+            if (member.isReadOnly()) {
+                html.append("<Badge type=\"info\" text=\"read-only\" />");
+            }
+            html.append("</span>");
+            if (itemId != null) {
+                html.append("<a class=\"overload-anchor\" href=\"#").append(itemId).append("\">#</a>");
+            }
+            html.append("</div>\n");
+            String body = buildOverloadBody(member, clz);
+            if (!body.isBlank()) {
+                html.append("<div class=\"overload-body\">\n")
+                    .append(body)
+                    .append("</div>\n");
+            }
+            html.append("</div>\n");
+        }
+        html.append("</div>\n");
+        // Markdown-it resumes parsing at blank lines even inside raw HTML.
+        // Keep generated overload groups contiguous so nested HTML remains valid.
+        md.raw("\n" + html.toString().replace("\n", "&#10;") + "\n");
+    }
+
+    /**
+     * One heading per member, followed by a plain signature fence and the same prose
+     * the rich page carries inside its HTML panel. Repeating the name for overloads is
+     * deliberate: each overload is a self-contained section an agent can read and cite.
+     */
+    private void renderPlainMemberGroup(MarkdownBuilder md, List<MemberDoc> members, ClassDoc clz) {
+        for (MemberDoc member : members) {
+            String title = member.kind() == MemberKind.CONSTRUCTOR
+                ? "new " + member.name()
+                : member.name();
+            String suffix = member.anchorId() != null && !member.anchorId().isBlank()
+                ? member.anchorId()
+                : member.name();
+            md.heading(3, title, clz.qualifiedName() + "_" + suffix);
+            md.codeBlock("js", renderSignatureAsText(member, clz));
+            renderPlainMemberBody(md, member, clz);
+        }
+    }
+
+    private void renderPlainMemberBody(MarkdownBuilder md, MemberDoc member, ClassDoc clz) {
+        String desc = formatDescription(member.docComment(), clz);
+        if (!desc.isBlank()) {
+            md.paragraph(desc);
+        }
+
+        if (hasDeprecatedTag(member.docComment())) {
+            String deprecated = getTagText(member.docComment(), DocTagKind.DEPRECATED, clz);
+            if (!deprecated.isBlank()) {
+                md.paragraph("**Deprecated:** " + deprecated);
+            }
+        }
+
+        // Parameter descriptions are rendered as Markdown so links and code spans
+        // survive without the raw HTML that the rich overload panel needs.
+        Map<String, String> paramDescriptions = new HashMap<>();
+        if (member.docComment() != null) {
+            for (DocTag tag : member.docComment().tags()) {
+                if (tag.kind() == DocTagKind.PARAM && tag.name() != null) {
+                    paramDescriptions.put(tag.name(),
+                        DocBodyRenderer.toMarkdown(tag.body(), link -> resolveLink(link, clz)));
+                }
+            }
+        }
+        boolean hasParamDocs = member.params().stream()
+            .anyMatch(param -> !paramDescriptions.getOrDefault(param.name(), "").isBlank());
+        if (hasParamDocs) {
+            md.boldHeader("Parameters:");
+            for (ParamDoc param : member.params()) {
+                String description = paramDescriptions.getOrDefault(param.name(), "");
+                if (description.isBlank()) {
+                    continue;
+                }
+                md.bulletItem(MarkdownBuilder.codeSpan(param.name()) + ": " + description);
+            }
+        }
+
+        List<String> typeParamDocs = plainTypeParameterRows(member.docComment(), member.typeParams(), clz);
+        if (!typeParamDocs.isEmpty()) {
+            md.boldHeader("Type Parameters:");
+            for (String row : typeParamDocs) {
+                md.bulletItem(row);
+            }
+        }
+
+        if (member.kind() == MemberKind.METHOD) {
+            String returns = getTagText(member.docComment(), DocTagKind.RETURN, clz);
+            if (!returns.isBlank()) {
+                md.paragraph("**Returns:** " + returns);
+            } else if (member.returnType() != null && member.returnType().kind() != TypeKind.VOID) {
+                md.paragraph("**Returns:** "
+                    + MarkdownBuilder.codeSpan(renderTypeAsText(member.returnType(), clz)));
+            }
+        }
+
+        SinceInfo since = sinceInfoPlain(member.docComment(), clz);
+        if (since.version() != null) {
+            md.paragraph("**Since:** " + since.version());
+        }
+        if (since.detail() != null && !since.detail().isBlank()) {
+            md.paragraph("**Note:** " + since.detail());
+        }
+
+        List<String> sees = new ArrayList<>();
+        if (member.docComment() != null) {
+            for (DocTag tag : member.docComment().tags()) {
+                if (tag.kind() == DocTagKind.SEE && !tag.body().isEmpty()) {
+                    sees.add(DocBodyRenderer.toMarkdown(tag.body(), link -> resolveLink(link, clz)));
+                }
+            }
+        }
+        if (!sees.isEmpty()) {
+            md.boldHeader("See:");
+            for (String see : sees) {
+                md.bulletItem(see);
+            }
+        }
+    }
+
+    /**
+     * Builds the documentation body for a single overload as an HTML string.
+     * Each piece of metadata (description, {@code @since}, {@code @deprecated},
+     * parameter list, return, {@code @see}) is serialised to HTML directly so
+     * it can be embedded inside the overload's container element.
+     */
+    private String buildOverloadBody(MemberDoc member, ClassDoc clz) {
+        StringBuilder html = new StringBuilder();
+
+        // All content inside buildOverloadBody is placed inside raw HTML blocks.
+        // Use the HTML rendering variants so that links become <a href> elements —
+        // Markdown link syntax ([text](url)) is not processed inside raw HTML by VitePress.
+        String desc = formatDescriptionAsHtml(member.docComment(), clz);
+        if (!desc.isEmpty()) {
+            // Descriptions can contain block markup such as lists and examples.
+            html.append("<div class=\"overload-description\">")
+                .append(desc)
+                .append("</div>\n");
+        }
+
+        // A member that only carries the @Deprecated annotation (no @deprecated text) is
+        // already marked by the "deprecated" badge in the signature row. Emitting a
+        // "Deprecated:" label with nothing after it would just be noise.
+        if (hasDeprecatedTag(member.docComment())) {
+            String deprecated = getTagTextAsHtml(member.docComment(), DocTagKind.DEPRECATED, clz);
+            if (!deprecated.isBlank()) {
+                html.append("<p><strong>Deprecated:</strong> ")
+                    .append(deprecated)
+                    .append("</p>\n");
+            }
+        }
+
+        // Parameters — render @param tag bodies via DocBodyRenderer so {@link} tags become <a> links.
+        List<ParamDoc> params = member.params();
+        Map<String, String> paramDescriptions = new HashMap<>();
+        if (member.docComment() != null) {
+            for (DocTag tag : member.docComment().tags()) {
+                if (tag.kind() == DocTagKind.PARAM && tag.name() != null) {
+                    paramDescriptions.put(tag.name(),
+                        DocBodyRenderer.toHtml(tag.body(), link -> resolveLinkAsHtml(link, clz)));
+                }
+            }
+        }
+        boolean hasParamDocs = params.stream()
+            .anyMatch(p -> paramDescriptions.containsKey(p.name()) && !paramDescriptions.get(p.name()).isBlank());
+        if (hasParamDocs) {
+            html.append("<p><strong>Parameters:</strong></p>\n<ul>\n");
+            for (ParamDoc param : params) {
+                String desc2 = paramDescriptions.getOrDefault(param.name(), "");
+                if (desc2.isBlank()) {
+                    continue;
+                }
+                html.append("<li><code>").append(param.name()).append("</code>: ")
+                    .append(desc2).append("</li>\n");
+            }
+            html.append("</ul>\n");
+        }
+
+        // Type parameters have their own section; TEMPLATE tags must not be
+        // folded into value-parameter documentation, even when names coincide.
+        List<String> typeParamDocs = renderMemberTypeParameters(member, clz);
+        if (!typeParamDocs.isEmpty()) {
+            html.append("<p><strong>Type Parameters:</strong></p>\n<ul>\n");
+            for (String typeParamDoc : typeParamDocs) {
+                html.append("<li>").append(typeParamDoc).append("</li>\n");
+            }
+            html.append("</ul>\n");
+        }
+
+        // Returns
+        if (member.kind() == MemberKind.METHOD) {
+            String retTag = getTagTextAsHtml(member.docComment(), DocTagKind.RETURN, clz);
+            if (!retTag.isEmpty()) {
+                html.append("<div class=\"overload-return\"><strong>Returns:</strong> ")
+                    .append(retTag)
+                    .append("</div>\n");
+            } else {
+                TypeRef returnType = member.returnType();
+                if (returnType != null && returnType.kind() != TypeKind.VOID) {
+                    html.append("<p><strong>Returns:</strong> <code>")
+                        .append(renderTypeAsHtml(returnType, clz))
+                        .append("</code></p>\n");
+                }
+            }
+        }
+
+        // TODO: (docs) Verify all [citaiton needed] instances.
+        // The release number is a pill in the signature row; only its history note stays here.
+        SinceInfo since = sinceInfo(member.docComment(), clz);
+        if (since.detail() != null && !since.detail().isBlank()) {
+            html.append("<p class=\"api-meta-note\">Note: ").append(since.detail()).append("</p>\n");
+        }
+
+        // See
+        if (member.docComment() != null) {
+            List<String> sees = new ArrayList<>();
+            for (DocTag tag : member.docComment().tags()) {
+                if (tag.kind() == DocTagKind.SEE && !tag.body().isEmpty()) {
+                    sees.add(resolveSeeTag(tag, clz));
+                }
+            }
+            if (!sees.isEmpty()) {
+                html.append("<p><strong>See:</strong></p>\n<ul>\n");
+                for (String see : sees) {
+                    html.append("<li>").append(see).append("</li>\n");
+                }
+                html.append("</ul>\n");
+            }
+        }
+
+        return html.toString();
+    }
+
+    private List<String> renderMemberTypeParameters(MemberDoc member, ClassDoc clz) {
+        if (member.typeParams().isEmpty() || member.docComment() == null) {
+            return List.of();
+        }
+        Map<String, String> descriptions = new HashMap<>();
+        for (DocTag tag : member.docComment().tags()) {
+            if (tag.kind() == DocTagKind.TEMPLATE && tag.name() != null) {
+                descriptions.put(tag.name(),
+                    DocBodyRenderer.toHtml(tag.body(), link -> resolveLinkAsHtml(link, clz), true));
+            }
+        }
+        List<String> rows = new ArrayList<>();
+        for (TypeRef typeParam : member.typeParams()) {
+            String description = descriptions.get(typeParam.name());
+            if (description != null && !description.isBlank()) {
+                rows.add("<code>" + escapeHtml(typeParam.name()) + "</code>: " + description);
+            }
+        }
+        return rows;
+    }
+
+    /**
+     * Markdown rows for a type-parameter list. Shared by class pages and member bodies
+     * in the plain flavour; the rich flavour keeps its HTML variant above.
+     */
+    private List<String> plainTypeParameterRows(DocComment comment, List<TypeRef> typeParams, ClassDoc context) {
+        if (typeParams.isEmpty() || comment == null) {
+            return List.of();
+        }
+        Map<String, String> descriptions = new HashMap<>();
+        for (DocTag tag : comment.tags()) {
+            if (tag.kind() == DocTagKind.TEMPLATE && tag.name() != null) {
+                descriptions.put(tag.name(),
+                    DocBodyRenderer.toMarkdown(tag.body(), link -> resolveLink(link, context)));
+            }
+        }
+        List<String> rows = new ArrayList<>();
+        for (TypeRef typeParam : typeParams) {
+            String description = descriptions.get(typeParam.name());
+            if (description != null && !description.isBlank()) {
+                rows.add(MarkdownBuilder.codeSpan(typeParam.name()) + ": " + description);
+            }
+        }
+        return rows;
+    }
+
+    /**
+     * Wraps the given text in an HTML element with optional attributes, for embedding inside raw
+     * HTML blocks. Use when the content is already fully rendered to HTML and just needs a
+     * wrapper element.
+     * @param inner the already-rendered HTML content to wrap
+     * @param elem the HTML element name, e.g. "div", "p", "li"
+     * @param attribs optional raw attributes to include in the opening tag, e.g. "class=\"foo\" id=\"bar\""
+     * @return the combined HTML string with the wrapper element and attributes around the inner content
+     */
+    private String wrapHtmlWithElemAndAttribs(String inner, String elem, String attribs) {
+        StringBuilder sb = new StringBuilder();
+        if (attribs != null && !attribs.isBlank()) {
+            attribs = " " + attribs.trim();
+        } else {
+            attribs = "";
+        }
+        sb.append("<").append(elem).append(attribs).append(">");
+        sb.append(inner);
+        sb.append("</").append(elem).append(">");
+        return sb.toString();
+    }
+    
+    /**
+     * Wraps the given text in an HTML element with optional attributes, for embedding inside raw
+     * HTML blocks. Use when the content is already fully rendered to HTML and just needs a
+     * wrapper element.
+     * @see #wrapHtmlWithElemAndAttribs(String, String, String) for the variant with attributes.
+     * @param inner the already-rendered HTML content to wrap
+     * @param elem the HTML element name, e.g. "div", "p", "li"
+     * @return the combined HTML string with the wrapper element around the inner content
+     */
+    private String wrapHtmlWithElem(String inner, String elem) {
+        return wrapHtmlWithElemAndAttribs(inner, elem, null);
+    }
+
+    /**
+     * Renders the signature as an HTML fragment with linked type names, for use
+     * inside {@code <code>} in the overload-sig block.
+     *
+     * <p>Type names become {@code <a href="...">} links (internal or external Javadoc).
+     * Generic angle brackets are HTML-entity-escaped. Punctuation and keywords are
+     * plain HTML-safe text.
+     */
+    private String renderSignatureAsHtml(MemberDoc member, ClassDoc context) {
+        return renderPartsHtml(signatureParts(member, context));
+    }
+
+    /**
+     * Renders the same signature classification as plain text, for the flavour that
+     * agents read. It shares {@link #signatureParts} with the HTML renderer, so the
+     * two outputs cannot disagree about a name, a type, or an overload.
+     */
+    private String renderSignatureAsText(MemberDoc member, ClassDoc context) {
+        return renderPartsText(signatureParts(member, context));
+    }
+
+    /**
+     * Classifies a member signature once. The parts carry the semantic role of each
+     * fragment (method, type, parameter, punctuation) and, for declared types, the
+     * resolved documentation URL. Renderers decide how to present them; neither
+     * has to re-parse the signature text.
+     */
+    private List<SignaturePart> signatureParts(MemberDoc member, ClassDoc context) {
+        boolean isStatic = member.modifiers().contains("static");
+        List<SignaturePart> parts = new ArrayList<>();
+        if (member.kind() == MemberKind.FIELD) {
+            if (isStatic) {
+                parts.add(part(TokenKind.KEYWORD, "static"));
+                parts.add(part(TokenKind.TEXT, " "));
+            }
+            parts.add(part(TokenKind.TEXT, member.name()));
+            parts.add(part(TokenKind.TEXT, ":"));
+            parts.add(part(TokenKind.TEXT, " "));
+            parts.addAll(typeParts(member.returnType(), context));
+            return parts;
+        }
+
+        if (member.kind() == MemberKind.CONSTRUCTOR) {
+            parts.add(part(TokenKind.KEYWORD, "new"));
+            parts.add(part(TokenKind.TEXT, " "));
+        } else if (isStatic) {
+            parts.add(part(TokenKind.KEYWORD, "static"));
+            parts.add(part(TokenKind.TEXT, " "));
+        }
+        parts.add(part(TokenKind.METHOD, member.name()));
+        parts.add(part(TokenKind.PUNCTUATION, "("));
+        List<ParamDoc> params = member.params();
+        for (int i = 0; i < params.size(); i++) {
+            if (i > 0) {
+                parts.add(part(TokenKind.PUNCTUATION, ", "));
+            }
+            ParamDoc param = params.get(i);
+            if (param.varArgs() && param.type() != null && param.type().kind() == TypeKind.ARRAY) {
+                // A parameter that takes a number of arguments is written with the type of one
+                // of them and an ellipsis, so that it reads as the call that it is.
+                parts.addAll(typeParts(param.type().typeArgs().get(0), context));
+                parts.add(part(TokenKind.PUNCTUATION, "..."));
+                parts.add(part(TokenKind.TEXT, " "));
+                parts.add(part(TokenKind.PARAMETER, param.name()));
+            } else {
+                parts.addAll(typeParts(param.type(), context));
+                parts.add(part(TokenKind.TEXT, " "));
+                parts.add(part(TokenKind.PARAMETER, param.name()));
+            }
+        }
+        parts.add(part(TokenKind.PUNCTUATION, ")"));
+        if (member.kind() != MemberKind.CONSTRUCTOR) {
+            parts.add(part(TokenKind.PUNCTUATION, ":"));
+            parts.add(part(TokenKind.TEXT, " "));
+            parts.addAll(typeParts(member.returnType(), context));
+        }
+        return parts;
+    }
+
+    /**
+     * Lists the parts of one type reference. The walk mirrors
+     * {@link #renderTypeAsHtml} because both must agree on links and separators.
+     */
+    private List<SignaturePart> typeParts(TypeRef type, @Nullable ClassDoc context) {
+        if (type == null) {
+            return List.of();
+        }
+        List<SignaturePart> parts = new ArrayList<>();
+        switch (type.kind()) {
+            case PRIMITIVE, VOID -> parts.add(part(TokenKind.PRIMITIVE, type.name()));
+            case TYPEVAR -> {
+                parts.add(part(TokenKind.TYPE_VAR, type.name()));
+                if (type.bounds() != null) {
+                    parts.add(part(TokenKind.TEXT, " "));
+                    parts.add(part(TokenKind.KEYWORD, "extends"));
+                    parts.add(part(TokenKind.TEXT, " "));
+                    parts.addAll(typeParts(type.bounds(), context));
+                }
+            }
+            case ARRAY -> {
+                parts.addAll(typeParts(type.typeArgs().get(0), context));
+                parts.add(part(TokenKind.PUNCTUATION, "[]"));
+            }
+            case WILDCARD -> {
+                parts.add(part(TokenKind.WILDCARD, "?"));
+                if (type.bounds() != null) {
+                    parts.add(part(TokenKind.TEXT, " "));
+                    parts.add(part(TokenKind.KEYWORD,
+                        type.wildcardBound() == TypeRef.WildcardBound.SUPER ? "super" : "extends"));
+                    parts.add(part(TokenKind.TEXT, " "));
+                    parts.addAll(typeParts(type.bounds(), context));
+                }
+            }
+            case DECLARED -> {
+                ResolvedType resolved = resolveTypeUrl(type, context);
+                if (resolved == null || resolved.url() == null) {
+                    parts.add(part(TokenKind.TYPE, type.name()));
+                } else {
+                    parts.add(new SignaturePart(TokenKind.LINKED_TYPE, type.name(), resolved.url(), resolved.isExternal()));
+                }
+                if (!type.typeArgs().isEmpty()) {
+                    parts.add(part(TokenKind.PUNCTUATION, "<"));
+                    for (int i = 0; i < type.typeArgs().size(); i++) {
+                        if (i > 0) {
+                            parts.add(part(TokenKind.PUNCTUATION, ", "));
+                        }
+                        parts.addAll(typeParts(type.typeArgs().get(i), context));
+                    }
+                    parts.add(part(TokenKind.PUNCTUATION, ">"));
+                }
+            }
+            case INTERSECTION -> addTypeArgParts(parts, type.typeArgs(), "&", context);
+            case UNION -> addTypeArgParts(parts, type.typeArgs(), "|", context);
+            default -> parts.add(part(TokenKind.TEXT, type.name()));
+        }
+        return parts;
+    }
+
+    private void addTypeArgParts(List<SignaturePart> parts, List<TypeRef> args, String separator,
+                                 @Nullable ClassDoc context) {
+        for (int i = 0; i < args.size(); i++) {
+            if (i > 0) {
+                parts.add(part(TokenKind.TEXT, " "));
+                parts.add(part(TokenKind.PUNCTUATION, separator));
+                parts.add(part(TokenKind.TEXT, " "));
+            }
+            parts.addAll(typeParts(args.get(i), context));
+        }
+    }
+
+    private String renderPartsHtml(List<SignaturePart> parts) {
+        StringBuilder sb = new StringBuilder();
+        for (SignaturePart signaturePart : parts) {
+            String text = escapeHtmlText(signaturePart.text());
+            if (signaturePart.kind() == TokenKind.TEXT) {
+                sb.append(text);
+                continue;
+            }
+            if (signaturePart.kind() == TokenKind.LINKED_TYPE) {
+                sb.append("<span class=\"syntax-token-linked-type\">");
+                if (signaturePart.href() == null) {
+                    sb.append(text);
+                } else {
+                    sb.append("<a href=\"").append(signaturePart.href()).append('"');
+                    if (signaturePart.external()) {
+                        sb.append(" target=\"_blank\" rel=\"noopener noreferrer\"");
+                    }
+                    sb.append('>').append(text).append("</a>");
+                }
+                sb.append("</span>");
+                continue;
+            }
+            sb.append("<span class=\"syntax-token-").append(cssToken(signaturePart.kind())).append("\">")
+                .append(text).append("</span>");
+        }
+        return sb.toString();
+    }
+
+    private String renderPartsText(List<SignaturePart> parts) {
+        StringBuilder sb = new StringBuilder();
+        for (SignaturePart part : parts) {
+            sb.append(part.text());
+        }
+        return sb.toString();
+    }
+
+    /** Escapes text for an HTML code block. Unlike {@link #escapeHtml}, it also escapes ampersands. */
+    private static String escapeHtmlText(String text) {
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /**
+     * Maps token roles to the class names in {@code theme/style.css}. {@code primative}
+     * keeps the historical spelling so existing styles and generated markup stay valid.
+     */
+    private static String cssToken(TokenKind kind) {
+        return switch (kind) {
+            case KEYWORD -> "keyword";
+            case METHOD -> "method";
+            case TYPE -> "type";
+            case PARAMETER -> "parameter";
+            case PUNCTUATION -> "punctuation";
+            case WILDCARD -> "wildcard";
+            case PRIMITIVE -> "primative";
+            case TYPE_VAR -> "typevar";
+            default -> "type";
+        };
+    }
+
+    /**
+     * Returns the rendered inline Markdown for a single tag, or an empty string.
+     * Plain pages use this so a tag body keeps links and code spans without HTML.
+     */
+    private String getTagText(DocComment comment, DocTagKind kind, ClassDoc context) {
+        if (comment == null) {
+            return "";
+        }
+        for (DocTag tag : comment.tags()) {
+            if (tag.kind() == kind) {
+                return DocBodyRenderer.toMarkdown(tag.body(), link -> resolveLink(link, context));
+            }
+        }
+        return "";
+    }
+
+    /**
+     * Returns the rendered inline HTML for a single tag of the given kind,
+     * or an empty string when no matching tag is present.
+     * Use for content placed inside raw HTML blocks (overload-body, &lt;p&gt;, &lt;li&gt;).
+     */
+    private String getTagTextAsHtml(DocComment comment, DocTagKind kind, ClassDoc context) {
+        if (comment == null) {
+            return "";
+        }
+        for (DocTag tag : comment.tags()) {
+            if (tag.kind() == kind) {
+                return DocBodyRenderer.toHtml(tag.body(), link -> resolveLinkAsHtml(link, context));
+            }
+        }
+        return "";
+    }
+
+    private String formatDescription(DocComment comment, ClassDoc context) {
+        if (comment == null) {
+            return "";
+        }
+        List<DocBodyNode> nodes = comment.body().isEmpty() ? comment.summary() : comment.body();
+        return DocBodyRenderer.toMarkdown(nodes, link -> resolveLink(link, context));
+    }
+
+    /**
+     * Renders the description as inline HTML for embedding inside raw HTML blocks.
+     */
+    private String formatDescriptionAsHtml(DocComment comment, ClassDoc context) {
+        if (comment == null) {
+            return "";
+        }
+        List<DocBodyNode> nodes = comment.body().isEmpty() ? comment.summary() : comment.body();
+        return DocBodyRenderer.toHtml(nodes, link -> resolveLinkAsHtml(link, context));
+    }
+
+    /** A compact one-line orientation for an index entry, derived from the Javadoc's first sentence. */
+    private String summary(ClassDoc clz) {
+        return summary(clz == null ? null : clz.docComment());
+    }
+
+    private String summary(DocComment comment) {
+        if (comment == null || comment.summary().isEmpty()) {
+            return "";
+        }
+        // Index summaries are plain text: a truncated Markdown link would leave a
+        // broken URL in the generated page, and these lines do not need rich text.
+        String text = DocBodyRenderer.toPlainText(comment.summary(),
+            link -> link.label() != null ? link.label() : linkLabel(link.signature()));
+        text = text.replaceAll("\\s+", " ").trim();
+        if (text.length() > 180) {
+            int cut = text.lastIndexOf(' ', 177);
+            if (cut < 120) cut = 177;
+            text = text.substring(0, cut).trim() + "…";
+        }
+        return text;
+    }
+
+    private String escapeTableCell(String text) {
+        return text.replace("|", "\\|").replace('\n', ' ').replace('\r', ' ');
+    }
+
+    /**
+     * Frontmatter only exists for VitePress. Plain agent markdown must start with the
+     * H1, not a YAML block that a generic Markdown reader would show as content.
+     */
+    private void siteFrontmatter(MarkdownBuilder md, String outline, String description) {
+        if (!isPlain()) {
+            md.frontmatter(frontmatter(outline, description));
+        }
+    }
+
+    /**
+     * Frontmatter for a generated page, including the summary a search result or a
+     * link preview shows. Without it every page falls back to the site description,
+     * which is the same sentence everywhere and therefore a useless snippet.
+     *
+     * @param outline VitePress outline depth, or {@code null} to keep the site default
+     */
+    private Map<String, String> frontmatter(String outline, String description) {
+        Map<String, String> entries = new LinkedHashMap<>();
+        if (outline != null) {
+            entries.put("outline", outline);
+        }
+        // Normalised here as well, so a page description written as plain prose is
+        // held to the same length and markup rule as one taken from the Javadoc.
+        entries.put("description", yamlDoubleQuoted(cleanDescription(description)));
+        return entries;
+    }
+
+    /** A description for a class page: its first documented sentence, or a shape-of-the-page fallback. */
+    private String metaDescription(ClassDoc clz) {
+        String described = metaDescription(clz == null ? null : clz.docComment());
+        if (!described.isEmpty()) {
+            return described;
+        }
+        String kind = switch (clz.group()) {
+            case Library -> "Script library";
+            case Event -> "Script event";
+            case Class -> "Class";
+        };
+        return kind + " " + clz.qualifiedName() + " in the JsMacrosCE script API for Minecraft " + minecraftVersion + ".";
+    }
+
+    private String namespaceDescription(ScriptNamespaceDoc namespace) {
+        String described = metaDescription(namespace.docComment());
+        return described.isEmpty()
+            ? "Script type namespace " + namespace.name() + " for Minecraft " + minecraftVersion
+                + ": read-only script names for Java types."
+            : described;
+    }
+
+    /** One sentence per index page, so the index links themselves preview usefully. */
+    private String groupDescription(String title) {
+        return switch (title) {
+            case "Libraries" -> "The global libraries a JsMacrosCE script starts with, such as Chat, World, Player, "
+                + "and Hud, for Minecraft " + minecraftVersion + ".";
+            case "Events" -> "Events a JsMacrosCE script can subscribe to or wait for, with their payload fields, "
+                + "cancellation rules, and filterers, for Minecraft " + minecraftVersion + ".";
+            case "Classes" -> "Objects JsMacrosCE libraries and events return, such as entities, blocks, inventories, "
+                + "and HUD draw elements, for Minecraft " + minecraftVersion + ".";
+            default -> title + " in the JsMacrosCE script API for Minecraft " + minecraftVersion + ".";
+        };
+    }
+
+    private String metaDescription(DocComment comment) {
+        if (comment == null || comment.summary().isEmpty()) {
+            return "";
+        }
+        String text = DocBodyRenderer.toPlainText(comment.summary(),
+            link -> link.label() != null ? link.label() : linkLabel(link.signature()));
+        return cleanDescription(text);
+    }
+
+    /**
+     * Reduces rendered prose to the single line a meta description may hold.
+     *
+     * <p>The Javadoc is rendered as Markdown first, so links, code spans, and inline
+     * HTML have to be flattened before the text can be embedded in an attribute.
+     */
+    private static String cleanDescription(String text) {
+        String clean = text
+            .replaceAll("!?\\[([^\\]]*)]\\([^)]*\\)", "$1")
+            .replaceAll("<[^>]+>", " ")
+            .replace("`", "");
+        clean = decodeHtmlEntities(clean).replaceAll("\\s+", " ").trim();
+        if (clean.length() <= 160) {
+            return clean;
+        }
+        int cut = clean.lastIndexOf(' ', 158);
+        if (cut < 100) {
+            cut = 158;
+        }
+        return clean.substring(0, cut).trim() + "…";
+    }
+
+    /** Entity references that survive into the rendered summary, plus numeric ones. */
+    private static final Pattern HTML_ENTITY =
+        Pattern.compile("&(#x[0-9a-fA-F]+|#\\d+|lt|gt|amp|quot|apos|nbsp);");
+
+    private static String decodeHtmlEntities(String text) {
+        // The replacement function's result is read for $ and \ escapes, so a decoded
+        // dollar sign or backslash would otherwise fail or be treated as a group reference.
+        return HTML_ENTITY.matcher(text).replaceAll(match -> Matcher.quoteReplacement(switch (match.group(1)) {
+            case "lt" -> "<";
+            case "gt" -> ">";
+            case "amp" -> "&";
+            case "quot" -> "\"";
+            case "apos" -> "'";
+            case "nbsp" -> " ";
+            default -> numericEntity(match.group(1));
+        }));
+    }
+
+    private static String numericEntity(String entity) {
+        boolean hex = entity.startsWith("#x");
+        if (!hex && !entity.startsWith("#")) {
+            return "";
+        }
+        try {
+            int codePoint = Integer.parseInt(entity.substring(hex ? 2 : 1), hex ? 16 : 10);
+            return new String(Character.toChars(codePoint));
+        } catch (IllegalArgumentException e) {
+            return "";
+        }
+    }
+
+    /** YAML double-quoted scalar: the only form that cannot break the frontmatter block. */
+    private static String yamlDoubleQuoted(String value) {
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replaceAll("[\\r\\n]+", " ") + "\"";
+    }
+
+    private boolean hasDeprecatedTag(DocComment comment) {
+        if (comment == null) {
+            return false;
+        }
+        return comment.tags().stream().anyMatch(tag -> tag.kind() == DocTagKind.DEPRECATED);
+    }
+
+    /**
+     * Resolves a {@code @see} tag to an HTML {@code <a>} element wrapping a
+     * {@code <code>} label. The tag body is expected to contain a single
+     * {@link DocBodyNode.Link} node (as produced by {@link com.jsmacrosce.doclet.core.BasicDocCommentParser});
+     * if not, a plain-text fallback is used.
+     */
+    private String resolveSeeTag(DocTag tag, ClassDoc context) {
+        for (DocBodyNode node : tag.body()) {
+            if (node instanceof DocBodyNode.Link link) {
+                String label = "<code>" + linkLabel(link.signature()) + "</code>";
+                LinkSignature parsed = parseSignature(link.signature());
+                if (parsed == null) {
+                    return label;
+                }
+                ClassDoc targetClass = resolveClass(parsed.className(), context);
+                if (targetClass == null) {
+                    return label;
+                }
+                String anchor = resolveMemberAnchor(targetClass, parsed);
+                String url = buildLinkUrl(targetClass, anchor, context);
+                return "<a href=\"" + url + "\">" + label + "</a>";
+            }
+            if (node instanceof DocBodyNode.Html html) {
+                return html.raw();
+            }
+        }
+        return DocBodyRenderer.toRawText(tag.body());
+    }
+
+    private void indexClasses(DocletModel model) {
+        classByQualifiedName.clear();
+        classByName.clear();
+        classByAlias.clear();
+        for (PackageDoc pkg : model.packages()) {
+            for (ClassDoc clz : pkg.classes()) {
+                classByQualifiedName.put(clz.qualifiedName(), clz);
+                addClassNameIndex(classByName, clz.name(), clz);
+                String simpleName = simpleName(clz.name());
+                if (!simpleName.equals(clz.name())) {
+                    addClassNameIndex(classByName, simpleName, clz);
+                }
+                if (hasAlias(clz)) {
+                    addClassNameIndex(classByAlias, clz.alias(), clz);
+                }
+            }
+        }
+    }
+
+    private void addClassNameIndex(Map<String, List<ClassDoc>> index, String key, ClassDoc clz) {
+        index.computeIfAbsent(key, name -> new ArrayList<>()).add(clz);
+    }
+
+    // -------------------------------------------------------------------------
+    // Type rendering — the HTML variant is a thin renderer over typeParts().
+    // -------------------------------------------------------------------------
+
+    /**
+     * Renders a {@link TypeRef} as plain text without markup, for code spans and
+     * signature fences in the plain flavour.
+     */
+    private String renderTypeAsText(TypeRef type, @Nullable ClassDoc context) {
+        return renderPartsText(typeParts(type, context));
+    }
+
+    /**
+     * Renders a {@link TypeRef} as an HTML fragment where each declared type
+     * name is wrapped in an {@code <a>} tag pointing to its documentation
+     * (internal project page or external Javadoc).
+     */
+    private String renderTypeAsHtml(TypeRef type, @Nullable ClassDoc context) {
+        return renderPartsHtml(typeParts(type, context));
+    }
+
+    /** Escapes < and > to HTML entities for safe embedding in HTML code elements. */
+    private String escapeHtml(String text) {
+        return text.replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /**
+     * Resolves the URL for a declared type.
+     * <ol>
+     *   <li>Checks the internal project index (classByQualifiedName).</li>
+     *   <li>Falls back to external Javadoc or the target's Minecraft class browser.</li>
+     * </ol>
+     * Returns {@code null} when no link can be determined.
+     */
+    private ResolvedType resolveTypeUrl(TypeRef type, @Nullable ClassDoc context) {
+        // 1. Internal project class?
+        ClassDoc internal = classByQualifiedName.get(type.qualifiedName());
+        if (internal != null) {
+            return new ResolvedType(type.qualifiedName(), buildLinkUrl(internal, null, context), false);
+        }
+
+        // 2. External Javadoc?
+        String qualifiedName = type.qualifiedName();
+        String className = type.name();
+        String packageName = qualifiedName.endsWith("." + className)
+            ? qualifiedName.substring(0, qualifiedName.length() - className.length() - 1)
+            : "";
+        String externalUrl = ExternalTypeLinks.resolve(packageName, className, minecraftVersion, externalPackages);
+        if (externalUrl != null) {
+            return new ResolvedType(type.qualifiedName(), externalUrl, true);
+        }
+
+        return null;
+    }
+
+    private record ResolvedType(String qualifiedName, String url, boolean isExternal) {}
+
+    // -------------------------------------------------------------------------
+    // Link resolution — called from the DocBodyRenderer linkResolver lambda.
+    // -------------------------------------------------------------------------
+
+    /**
+     * Resolves a {@link DocBodyNode.Link} to a Markdown link string.
+     * Falls back to a plain label when the target cannot be found.
+     */
+    private String resolveLink(DocBodyNode.Link link, ClassDoc context) {
+        String sig = link.signature();
+
+        // Check for simple Java type aliases first (String, Boolean, boxed numbers).
+        String mapped = DocBodyRenderer.mapSimpleLinkSignature(sig);
+        if (mapped != null) {
+            return mapped;
+        }
+
+        LinkSignature parsed = parseSignature(sig);
+        if (parsed == null) {
+            String label = link.label() != null ? link.label() : linkLabel(sig);
+            // If the bare sig looks like a signature, wrap it in a code span.
+            if (DocBodyRenderer.looksLikeSignature(sig)) {
+                return MarkdownBuilder.codeSpan(DocBodyRenderer.convertSignature(sig));
+            }
+            return label;
+        }
+        ClassDoc targetClass = link.targetType() == null ? resolveClass(parsed.className(), context)
+            : classByQualifiedName.get(link.targetType().qualifiedName());
+        if (targetClass == null) {
+            ResolvedType external = link.targetType() == null ? null : resolveTypeUrl(link.targetType(), context);
+            if (external != null) {
+                String label = link.label() != null ? link.label() : linkLabel(sig);
+                return "[" + label + "](" + external.url() + ")";
+            }
+            String label = link.label() != null ? link.label() : linkLabel(sig);
+            return label;
+        }
+        String anchor = resolveMemberAnchor(targetClass, parsed);
+        String url = buildLinkUrl(targetClass, anchor, context);
+        String label = link.label() != null ? link.label() : linkLabel(sig);
+        return "[" + label + "](" + url + ")";
+    }
+
+    /**
+     * Resolves a {@link DocBodyNode.Link} to an HTML {@code <a>} element string.
+     * Used when rendering inside raw HTML blocks (overload-body, param lists, etc.)
+     * where Markdown link syntax is not processed by VitePress.
+     */
+    private String resolveLinkAsHtml(DocBodyNode.Link link, ClassDoc context) {
+        String sig = link.signature();
+
+        String mapped = DocBodyRenderer.mapSimpleLinkSignature(sig);
+        if (mapped != null) {
+            return "<code>" + escapeHtml(mapped) + "</code>";
+        }
+
+        LinkSignature parsed = parseSignature(sig);
+        String label = link.label() != null ? link.label() : linkLabel(sig);
+        if (parsed == null) {
+            if (DocBodyRenderer.looksLikeSignature(sig)) {
+                return "<code>" + escapeHtml(DocBodyRenderer.convertSignature(sig)) + "</code>";
+            }
+            return escapeHtml(label);
+        }
+        ClassDoc targetClass = link.targetType() == null ? resolveClass(parsed.className(), context)
+            : classByQualifiedName.get(link.targetType().qualifiedName());
+        if (targetClass == null) {
+            ResolvedType external = link.targetType() == null ? null : resolveTypeUrl(link.targetType(), context);
+            if (external != null) {
+                return "<a href=\"" + external.url() + "\" target=\"_blank\" rel=\"noopener noreferrer\">"
+                    + escapeHtml(label) + "</a>";
+            }
+            return escapeHtml(label);
+        }
+        String anchor = resolveMemberAnchor(targetClass, parsed);
+        String url = buildLinkUrl(targetClass, anchor, context);
+        return "<a href=\"" + url + "\">" + escapeHtml(label) + "</a>";
+    }
+
+    private String buildLinkUrl(ClassDoc targetClass, String anchor, ClassDoc context) {
+        // Anchors on the page are qualified: "qualifiedName_anchorId" (e.g. "com.example.Foo_bar-String-").
+        String qualifiedAnchor = anchor != null ? targetClass.qualifiedName() + "_" + anchor : null;
+        if (context != null && targetClass.qualifiedName().equals(context.qualifiedName())) {
+            return qualifiedAnchor == null ? "#" : "#" + qualifiedAnchor;
+        }
+
+        String url;
+        if (context == null) {
+            url = "/" + routePrefix + "/" + classPath(targetClass);
+        } else {
+            Path from = Path.of(classPath(context));
+            Path to = Path.of(classPath(targetClass));
+            Path fromParent = from.getParent();
+            url = (fromParent == null ? to : fromParent.relativize(to)).toString().replace(File.separatorChar, '/');
+            if (url.isBlank()) {
+                url = "#";
+            }
+        }
+        if (qualifiedAnchor != null) {
+            url = isPlain() && !url.equals("#") ? url + ".md" : url;
+            url = url + "#" + qualifiedAnchor;
+        } else if (isPlain() && !url.equals("#")) {
+            url = url + ".md";
+        }
+        return url;
+    }
+
+    @Nullable
+    private ClassDoc resolveClass(String name, ClassDoc context) {
+        if (name == null || name.isBlank()) {
+            return context;
+        }
+        String cleaned = name.startsWith("Packages.") ? name.substring("Packages.".length()) : name;
+        int genericIndex = cleaned.indexOf('<');
+        if (genericIndex != -1) {
+            cleaned = cleaned.substring(0, genericIndex).trim();
+        }
+        ClassDoc direct = classByQualifiedName.get(cleaned);
+        if (direct != null) {
+            return direct;
+        }
+        List<ClassDoc> matches = new ArrayList<>();
+        List<ClassDoc> nameMatches = classByName.get(cleaned);
+        if (nameMatches != null) {
+            matches.addAll(nameMatches);
+        }
+        List<ClassDoc> aliasMatches = classByAlias.get(cleaned);
+        if (aliasMatches != null) {
+            matches.addAll(aliasMatches);
+        }
+        if (matches.isEmpty()) {
+            return null;
+        }
+        if (matches.size() == 1 || context == null) {
+            return matches.getFirst();
+        }
+        for (ClassDoc match : matches) {
+            if (match.packageName().equals(context.packageName())) {
+                return match;
+            }
+        }
+        return matches.getFirst();
+    }
+
+    @Nullable
+    private LinkSignature parseSignature(String signature) {
+        if (signature == null) {
+            return null;
+        }
+        String trimmed = signature.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        String classPart = null;
+        String memberPart = null;
+        int hashIndex = trimmed.indexOf('#');
+        if (hashIndex == 0) {
+            memberPart = trimmed.substring(1);
+        } else if (hashIndex > 0) {
+            classPart = trimmed.substring(0, hashIndex);
+            memberPart = trimmed.substring(hashIndex + 1);
+        } else {
+            classPart = trimmed;
+        }
+        String memberName = null;
+        List<String> params = null;
+        if (memberPart != null && !memberPart.isBlank()) {
+            int parenIndex = memberPart.indexOf('(');
+            if (parenIndex != -1 && memberPart.endsWith(")")) {
+                memberName = memberPart.substring(0, parenIndex);
+                String paramBody = memberPart.substring(parenIndex + 1, memberPart.length() - 1);
+                params = splitParams(paramBody);
+            } else {
+                memberName = memberPart;
+            }
+        }
+        return new LinkSignature(classPart, memberName, params);
+    }
+
+    private List<String> splitParams(String paramBody) {
+        List<String> params = new ArrayList<>();
+        if (paramBody == null || paramBody.isBlank()) {
+            return params;
+        }
+        int depth = 0;
+        StringBuilder current = new StringBuilder();
+        for (int i = 0; i < paramBody.length(); i++) {
+            char ch = paramBody.charAt(i);
+            if (ch == '<') {
+                depth++;
+            } else if (ch == '>' && depth > 0) {
+                depth--;
+            }
+            if (ch == ',' && depth == 0) {
+                params.add(current.toString().trim());
+                current.setLength(0);
+            } else {
+                current.append(ch);
+            }
+        }
+        if (!current.isEmpty()) {
+            params.add(current.toString().trim());
+        }
+        return params;
+    }
+
+    @Nullable
+    private String resolveMemberAnchor(ClassDoc clz, LinkSignature signature) {
+        if (signature.memberName() == null) {
+            return null;
+        }
+        List<MemberDoc> members = new ArrayList<>();
+        for (MemberDoc member : clz.members()) {
+            if (member.name().equals(signature.memberName())) {
+                members.add(member);
+            }
+        }
+        if (members.isEmpty() && signature.memberName().equals(clz.name())) {
+            for (MemberDoc member : clz.members()) {
+                if (member.kind() == MemberKind.CONSTRUCTOR) {
+                    members.add(member);
+                }
+            }
+        }
+        if (members.isEmpty()) {
+            return null;
+        }
+        List<String> params = signature.paramTypes();
+        if (params == null) {
+            return members.size() == 1 ? members.getFirst().anchorId() : null;
+        }
+        for (MemberDoc member : members) {
+            if (paramsMatch(member, params)) {
+                return member.anchorId();
+            }
+        }
+        return null;
+    }
+
+    private boolean paramsMatch(MemberDoc member, List<String> params) {
+        if (member.params().size() != params.size()) {
+            return false;
+        }
+        for (int i = 0; i < params.size(); i++) {
+            String expected = normalizeParamType(params.get(i));
+            ParamDoc param = member.params().get(i);
+            String actual = normalizeParamType(memberParamTypeName(param));
+            if (!expected.equals(actual)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private String memberParamTypeName(ParamDoc param) {
+        return memberParamTypeName(param.type(), param.varArgs());
+    }
+
+    private String memberParamTypeName(TypeRef type, boolean varArgs) {
+        String base = type.kind() == TypeKind.ARRAY
+            ? memberParamTypeName(type.typeArgs().getFirst(), false) + "[]"
+            : type.name();
+        if (varArgs && type.kind() != TypeKind.ARRAY) {
+            base = base + "[]";
+        }
+        return base;
+    }
+
+    private String normalizeParamType(String type) {
+        if (type == null) {
+            return "";
+        }
+        String normalized = type.trim();
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        if (normalized.startsWith("?")) {
+            return "?";
+        }
+        int arrayDepth = 0;
+        while (normalized.endsWith("[]")) {
+            normalized = normalized.substring(0, normalized.length() - 2).trim();
+            arrayDepth++;
+        }
+        if (normalized.endsWith("...")) {
+            normalized = normalized.substring(0, normalized.length() - 3).trim();
+            arrayDepth++;
+        }
+        int genericIndex = normalized.indexOf('<');
+        if (genericIndex != -1) {
+            normalized = normalized.substring(0, genericIndex).trim();
+        }
+        normalized = stripPackageName(normalized);
+        return normalized + "[]".repeat(Math.max(0, arrayDepth));
+    }
+
+    private String stripPackageName(String name) {
+        if (name == null || name.isBlank()) {
+            return "";
+        }
+        if (!name.contains(".")) {
+            return name;
+        }
+        String[] parts = name.split("\\.");
+        int firstTypeIndex = -1;
+        for (int i = 0; i < parts.length; i++) {
+            String part = parts[i];
+            if (!part.isEmpty() && Character.isUpperCase(part.charAt(0))) {
+                firstTypeIndex = i;
+                break;
+            }
+        }
+        if (firstTypeIndex == -1) {
+            return parts[parts.length - 1];
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int i = firstTypeIndex; i < parts.length; i++) {
+            if (!builder.isEmpty()) {
+                builder.append(".");
+            }
+            builder.append(parts[i]);
+        }
+        return builder.toString();
+    }
+
+    private String linkLabel(String signature) {
+        if (signature == null) {
+            return "";
+        }
+        String cleaned = signature.trim();
+        if (cleaned.startsWith("Packages.")) {
+            cleaned = cleaned.substring("Packages.".length());
+        }
+        int hashIndex = cleaned.indexOf('#');
+        if (hashIndex == 0) {
+            return cleaned.substring(1);
+        }
+        if (hashIndex > 0) {
+            String classPart = cleaned.substring(0, hashIndex);
+            String memberPart = cleaned.substring(hashIndex + 1);
+            String classLabel = stripPackageName(classPart);
+            if (classLabel.isBlank()) {
+                return memberPart;
+            }
+            return classLabel + "." + memberPart;
+        }
+        return stripPackageName(cleaned);
+    }
+
+    private String simpleName(String name) {
+        int idx = name.lastIndexOf('.');
+        return idx == -1 ? name : name.substring(idx + 1);
+    }
+
+    /**
+     * Semantic role of one signature fragment. The set is deliberately small: it
+     * covers what the Javadoc model can classify reliably and what the theme styles.
+     */
+    private enum TokenKind {
+        TEXT, KEYWORD, METHOD, TYPE, LINKED_TYPE, PARAMETER, PUNCTUATION, WILDCARD, PRIMITIVE, TYPE_VAR
+    }
+
+    /**
+     * One classified signature fragment. {@code href} is set only for linked types;
+     * {@code external} selects the new-tab attributes for Javadoc outside the site.
+     */
+    private record SignaturePart(TokenKind kind, String text, String href, boolean external) {
+        private SignaturePart(TokenKind kind, String text) {
+            this(kind, text, null, false);
+        }
+    }
+
+    private static SignaturePart part(TokenKind kind, String text) {
+        return new SignaturePart(kind, text);
+    }
+
+    private record LinkSignature(String className, String memberName, List<String> paramTypes) {}
+
+}

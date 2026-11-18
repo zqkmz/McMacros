@@ -1,0 +1,317 @@
+import me.modmuss50.mpp.PublishModTask
+import me.modmuss50.mpp.ReleaseType
+import org.gradle.api.tasks.Copy
+import org.gradle.api.tasks.bundling.AbstractArchiveTask
+import org.gradle.internal.extensions.stdlib.capitalized
+import org.gradle.api.GradleException
+import java.io.File
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+plugins {
+    id("dev.kikugie.stonecutter")
+    id("net.neoforged.moddev") apply false
+    id("fabric-loom") apply false
+    alias(libs.plugins.mod.publish)
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Sponge"
+                url = uri("https://repo.spongepowered.org/repository/maven-public")
+            }
+        }
+        filter {
+            includeGroupAndSubgroups("org.spongepowered")
+        }
+    }
+
+    exclusiveContent {
+        forRepositories(
+            maven {
+                name = "ParchmentMC"
+                url = uri("https://maven.parchmentmc.org/")
+            },
+            maven {
+                name = "NeoForge"
+                url = uri("https://maven.neoforged.net/releases")
+            }
+        )
+        filter {
+            includeGroup("org.parchmentmc.data")
+        }
+    }
+
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "TerraformersMC"
+                url = uri("https://maven.terraformersmc.com/releases/")
+            }
+        }
+        filter {
+            includeGroupAndSubgroups("com.terraformersmc")
+        }
+    }
+
+    maven {
+        name = "BlameJared"
+        url = uri("https://maven.blamejared.com")
+    }
+    maven {
+        name = "NeoForge"
+        url = uri("https://maven.neoforged.net/releases")
+    }
+    maven {
+        name = "Fabric"
+        url = uri("https://maven.fabricmc.net")
+    }
+}
+
+val IS_CI = System.getenv("CI") == "true"
+
+if (IS_CI) stonecutter active null
+else stonecutter active file("stonecutter.active") /* [SC] DO NOT EDIT */
+
+// Root-level distribution setup
+val distDir = layout.projectDirectory.dir(providers.gradleProperty("distDirectory").orElse("dist").get())
+val distDirFile = distDir.asFile
+val canonicalDist = distDirFile.canonicalFile
+val canonicalBuild = layout.buildDirectory.get().asFile.canonicalFile
+require(canonicalDist == file("dist").canonicalFile ||
+    (canonicalDist != canonicalBuild && canonicalDist.toPath().startsWith(canonicalBuild.toPath()))) {
+    "distDirectory must be dist/ or a subdirectory of build/; distribution tasks delete their output directory"
+}
+val docsBuildDir = layout.buildDirectory.dir("docs").get().asFile
+
+repositories {
+    mavenCentral()
+}
+
+// Root-level properties
+val modIdProvider = providers.gradleProperty("mod_id")
+val channelProvider = providers.gradleProperty("channel").orElse("release")
+val modVersionBaseProvider = providers.gradleProperty("mod_version").orElse(providers.gradleProperty("version"))
+val betaNumberProvider = providers.gradleProperty("beta_number")
+val alphaDateProvider = providers.gradleProperty("alpha_date")
+val buildShaProvider = providers.gradleProperty("build_sha")
+
+val isDevChannel = channelProvider.get() == "dev"
+
+val dateFormatter = DateTimeFormatter.ofPattern("yyyyMMdd")
+val computedAlphaDateProvider = providers.provider {
+    alphaDateProvider.orElse(
+        providers.provider {
+            ZonedDateTime.now(ZoneId.of("America/New_York")).format(dateFormatter)
+        }
+    ).get()
+}
+
+val computedBuildShaProvider = providers.provider {
+    val sha = buildShaProvider.orElse(
+        providers.provider { System.getenv("GITHUB_SHA") ?: "local" }
+    ).get()
+    sha.take(7)
+}
+
+val computedVersionProvider = providers.provider {
+    val base = modVersionBaseProvider.get()
+    when (channelProvider.get()) {
+        "release" -> base
+        "beta" -> {
+            val betaNum = betaNumberProvider.orElse("1").get()
+            "$base-beta.$betaNum"
+        }
+        "alpha" -> "$base-alpha.${computedAlphaDateProvider.get()}"
+        else -> "$base-dev-${computedBuildShaProvider.get()}"
+    }
+}
+
+// Safe root-level access
+val modId = modIdProvider.get()
+val channel = channelProvider.get()
+version = computedVersionProvider.get()
+
+val supportedVersions = listOf("1.21.5", "1.21.8", "1.21.10", "1.21.11", "26.1.2", "26.2", "26.3")
+val mcVersionsToBuild = if (IS_CI) supportedVersions else listOf(supportedVersions.last())
+val mcVersion = mcVersionsToBuild.first() // for backward compatibility
+
+val loaders = listOf("fabric", "neoforge")
+
+val jsmExtensions = listOf(
+    SharedExtensionArtifact(path = ":extension:graal:python", id = "graalpy")
+)
+
+val artifactBaseName = providers.provider { "$modId-$mcVersion-$channel-$version" }
+
+// Register distribution tasks
+tasks.register("prepareDist") {
+    group = "distribution"
+    description = "Cleans and recreates the dist directory"
+    doLast {
+        project.delete(distDirFile)
+        distDirFile.mkdirs()
+    }
+}
+
+tasks.register("printVersion") {
+    group = "distribution"
+    description = "Prints the computed project version for CI workflows"
+    doLast {
+        println(project.version)
+    }
+}
+
+if (project == rootProject) {
+    val activeStonecutterVersion = providers.fileContents(layout.projectDirectory.file("stonecutter.active"))
+        .asText
+        .map { text ->
+            text.trim().ifEmpty {
+                throw GradleException("stonecutter.active is empty; set an active version first")
+            }
+        }
+
+    val activeVersion = activeStonecutterVersion.get()
+    val fabricRunClientPath = ":fabric:$activeVersion:runClient"
+    val neoforgeRunClientPath = ":neoforge:$activeVersion:runClient"
+
+    tasks.register("runFabricClient") {
+        group = "run"
+        description = "Runs the Fabric client for the active Stonecutter version"
+        dependsOn(fabricRunClientPath)
+    }
+
+    tasks.register("runNeoforgeClient") {
+        group = "run"
+        description = "Runs the NeoForge client for the active Stonecutter version"
+        dependsOn(neoforgeRunClientPath)
+    }
+}
+
+tasks.register("printArtifactName") {
+    group = "distribution"
+    description = "Prints the canonical artifact name for CI workflows"
+    doLast {
+        println(artifactBaseName.get())
+    }
+}
+
+tasks.register("printMinecraftVersion") {
+    group = "distribution"
+    description = "Prints the targeted Minecraft version(s) for CI workflows"
+    doLast {
+        println(mcVersionsToBuild.joinToString(","))
+    }
+}
+
+// Configure distribution tasks after projects are evaluated
+gradle.projectsEvaluated {
+    val documentationVersions = registerDocumentationTasks(supportedVersions, mcVersionsToBuild)
+    val distribution = registerDistributionTasks(
+        modId, supportedVersions, mcVersionsToBuild, documentationVersions, loaders, jsmExtensions, distDir
+    )
+
+    tasks.register("createDistDocs", Copy::class.java) {
+        group = "distribution"
+        description = "Packages generated documentation into the dist directory"
+        dependsOn("prepareDist", documentationVersions.map { "copyDocs${it.replace(".", "")}" })
+        documentationVersions.forEach { minecraft ->
+            from(File(docsBuildDir, "targets/$minecraft")) { into(minecraft) }
+        }
+        into(File(distDirFile, "docs"))
+    }
+
+    tasks.register("createDistSite", Copy::class.java) {
+        group = "distribution"
+        description = "Packages the built VitePress site into dist/vitepress"
+        dependsOn("prepareDist", "buildVitepressSite")
+        from(File(docsBuildDir, "vitepress/.vitepress/dist"))
+        into(File(distDirFile, "vitepress"))
+    }
+
+    val releaseType = when (channel) {
+        "release" -> ReleaseType.STABLE
+        "beta" -> ReleaseType.BETA
+        else -> ReleaseType.ALPHA
+    }
+
+    val modrinthProjectId = providers.gradleProperty("modrinth_id")
+        .orElse(providers.environmentVariable("MODRINTH_PROJECT"))
+    val modrinthToken = providers.gradleProperty("modrinth_token")
+        .orElse(providers.environmentVariable("MODRINTH_TOKEN"))
+    val githubRepo = providers.gradleProperty("github_repository")
+        .orElse(providers.environmentVariable("GITHUB_REPOSITORY"))
+        .orElse("JsMacrosCE/JsMacros")
+    val githubToken = providers.environmentVariable("GITHUB_TOKEN")
+    val githubCommitish = providers.environmentVariable("GITHUB_SHA").orElse("main")
+    val githubTagName = providers.provider { "v${project.version}" }
+
+    fun modrinthChangelog(loader: String, targetMcVersion: String): String = """
+        JsMacrosCE ${project.version} for $loader on Minecraft $targetMcVersion.
+        Source: https://github.com/JsMacrosCE/JsMacros
+    """.trimIndent()
+
+    fun githubChangelog(): String = """
+        ${releaseType.toString().lowercase(Locale.getDefault()).capitalized()} Release for JsMacrosCE ${project.version}.
+        Supported Minecraft versions: ${mcVersionsToBuild.joinToString(", ")}.
+        Alpha, beta, and release builds are available on Modrinth: https://modrinth.com/mod/jsmacrosce/versions
+    """.trimIndent()
+
+    publishMods {
+        val publishModrinth = modrinthToken.isPresent && channel != "dev"
+
+        if (publishModrinth) {
+            mcVersionsToBuild.forEach { targetMcVersion ->
+                val mcSegment = targetMcVersion.replace(".", "")
+                loaders.forEach { loader ->
+                    val platformName = "modrinth${loader.replaceFirstChar { it.uppercase() }}$mcSegment"
+                    val loaderProject = project(":$loader:$targetMcVersion")
+                    val sourceTaskName = loaderProject.modJarTaskName(loader)
+
+                    modrinth(platformName) {
+                        projectId.set(modrinthProjectId)
+                        accessToken.set(modrinthToken)
+                        minecraftVersions.add(targetMcVersion)
+                        modLoaders.set(listOf(loader))
+
+                        version.set("${project.version}+$targetMcVersion-$loader")
+                        displayName.set("JsMacrosCE ${project.version} ($loader $targetMcVersion)")
+                        changelog.set(modrinthChangelog(loader, targetMcVersion))
+                        type.set(releaseType)
+                        file.set(
+                            loaderProject.tasks.named(sourceTaskName, AbstractArchiveTask::class.java)
+                                .flatMap { it.archiveFile }
+                        )
+                    }
+                }
+            }
+        }
+
+        github("githubRelease") {
+            accessToken.set(githubToken)
+            repository.set(githubRepo)
+            commitish.set(githubCommitish)
+            tagName.set(githubTagName)
+            displayName.set("JsMacrosCE ${project.version}")
+            changelog.set(githubChangelog())
+            type.set(releaseType)
+            allowEmptyFiles.set(true)
+            additionalFiles.from(distribution.releaseFiles)
+        }
+    }
+
+    tasks.named("publishMods") {
+        dependsOn("createDist")
+    }
+
+    tasks.withType(PublishModTask::class.java).configureEach {
+        dependsOn("createDist", distribution.verify)
+    }
+}

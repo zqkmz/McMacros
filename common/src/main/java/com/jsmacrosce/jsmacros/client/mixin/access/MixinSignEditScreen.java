@@ -1,0 +1,69 @@
+package com.jsmacrosce.jsmacros.client.mixin.access;
+
+import com.jsmacrosce.doclet.DocletIgnore;
+
+import net.minecraft.client.gui.font.TextFieldHelper;
+import net.minecraft.client.gui.screens.inventory.AbstractSignEditScreen;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.level.block.entity.SignText;
+import org.jetbrains.annotations.Nullable;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import com.jsmacrosce.jsmacros.client.access.ISignEditScreen;
+
+@Mixin(AbstractSignEditScreen.class)
+@DocletIgnore
+public abstract class MixinSignEditScreen implements ISignEditScreen {
+
+    @Shadow
+    @Final
+    private String[] messages;
+
+//    @Shadow
+//    @Final
+//    private SignBlockEntity blockEntity;
+//
+//    @Shadow
+//    @Final
+//    private boolean front;
+
+    //? if >=26.3 {
+    /*@Shadow
+    @Final
+    private SignText.Mutable text;
+    *///?} else {
+    @Shadow
+    private SignText text;
+    //?}
+
+    @Shadow
+    @Nullable
+    private TextFieldHelper signField;
+
+    @Shadow
+    private int line;
+
+    @Override
+    public void jsmacros_setLine(int line, String text) {
+        if (line < 0 || line >= this.messages.length) {
+            throw new IndexOutOfBoundsException("Line index out of bounds: " + line);
+        }
+
+        this.messages[line] = text; // actual
+        //? if >=26.3 {
+        /*this.text.setLine(line, Component.nullToEmpty(text));
+        *///?} else {
+        this.text = this.text.setMessage(line, Component.nullToEmpty(text)); // gui visual
+        //?}
+        // TODO: On sodium, this needs to be called on the main thread
+        // this.blockEntity.setText(this.text, this.front); // block visual
+    }
+
+    @Override
+    public void jsmacros_fixSelection() {
+        int pos = this.messages[this.line].length() + 1;
+        if (this.signField != null) this.signField.setCursorPos(pos, false);
+    }
+
+}

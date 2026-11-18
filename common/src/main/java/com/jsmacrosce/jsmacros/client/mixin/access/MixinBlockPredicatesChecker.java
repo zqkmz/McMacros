@@ -1,0 +1,20 @@
+package com.jsmacrosce.jsmacros.client.mixin.access;
+
+import com.jsmacrosce.doclet.DocletIgnore;
+
+import net.minecraft.world.item.AdventureModePredicate;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.gen.Accessor;
+
+import java.util.List;
+
+import net.minecraft.advancements.critereon.BlockPredicate;
+
+@Mixin(AdventureModePredicate.class)
+@DocletIgnore
+public interface MixinBlockPredicatesChecker {
+
+    @Accessor
+    List<BlockPredicate> getPredicates();
+
+}

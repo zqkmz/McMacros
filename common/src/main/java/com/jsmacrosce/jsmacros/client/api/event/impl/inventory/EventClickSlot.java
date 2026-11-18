@@ -1,0 +1,114 @@
+package com.jsmacrosce.jsmacros.client.api.event.impl.inventory;
+
+import com.jsmacrosce.doclet.DocletCategory;
+
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import com.jsmacrosce.doclet.DocletReplaceReturn;
+import com.jsmacrosce.jsmacros.client.JsMacrosClient;
+import com.jsmacrosce.jsmacros.client.api.classes.inventory.Inventory;
+import com.jsmacrosce.jsmacros.core.event.BaseEvent;
+import com.jsmacrosce.jsmacros.core.event.Event;
+
+/**
+ * Fires when the local player clicks a slot in an open container screen, which includes the
+ * player's own inventory and the creative inventory. It is raised for every click the screen
+ * handles, whether the click ends up moving items or not, and the fields describe the click
+ * rather than its result.<br>
+ * Cancelling stops the click. The event is raised before the click is handed to the game mode,
+ * and cancelling makes the mixin abort before that call happens, so the click packet is never
+ * sent and no slot changes. This is also why
+ * {@link EventDropSlot} is not raised for a cancelled click: the drop event is only reached once
+ * the click itself has been allowed through.
+ * <br>
+ * For drops on their own, see {@link EventDropSlot}. For a single slot changing because the
+ * server sent an update, see {@link EventSlotUpdate}.
+ * <pre>
+ * JsMacros.on("ClickSlot", JavaWrapper.methodToJava(function (event) {
+ *   if (event.mode === 1) {
+ *     // mode 1 is the shift-click quick move, refuse it entirely
+ *     event.cancel();
+ *     return;
+ *   }
+ *   if (event.slot === -999) {
+ *     // -999 is the out-of-window slot, nothing lives there to protect
+ *     return;
+ *   }
+ *   const stack = event.getInventory().getSlot(event.slot);
+ *   if (stack.getItemID() === "minecraft:diamond_sword") {
+ *     Chat.log("diamond swords are not allowed to move out of this chest");
+ *     event.cancel();
+ *   }
+ * }))
+ * </pre>
+ * @author Wagyourtail
+ * @since 1.6.4
+ */
+@DocletCategory("Inventory")
+@Event(value = "ClickSlot", cancellable = true)
+public class EventClickSlot extends BaseEvent {
+    protected final AbstractContainerScreen<?> screen;
+    /**
+     * Numeric id of the game's click action.<br>
+     * {@code 0} is a plain pick up or place, {@code 1} is the shift-click quick move, {@code 2} is
+     * a hotbar swap, {@code 3} is the creative middle-click clone, {@code 4} is a throw or drop,
+     * {@code 5} is a right-click quick craft, and {@code 6} is a double-click pick up all, which
+     * sweeps everything of that item type into the cursor.<br>
+     * These ids correspond to the {@code ClickType} action ids on Minecraft 1.21.8.
+     */
+    public final int mode;
+    /**
+     * Which button or key produced the click, as a number.<br>
+     * For a pick up or a throw this is the mouse button: {@code 0} for the left button, or for
+     * dropping a single item, and {@code 1} for the right button, or for dropping the whole
+     * stack. For a swap it is the hotbar slot that was pressed, {@code 0} through {@code 8}, or
+     * {@code 40} for the offhand key. The creative inventory also uses {@code 9} and {@code 10}
+     * for its two extra buttons.
+     */
+    @DocletReplaceReturn("ClickSlotButton")
+    public final int button;
+    /**
+     * the index of the clicked slot in the open screen's menu, the same numbering
+     * {@link Inventory#getSlot(int) getSlot()} uses.<br>
+     * This is {@code -999}, the game's out-of-window slot, when the click landed outside the
+     * container window. That case is also reported as a drop by
+     * {@link com.jsmacrosce.jsmacros.client.api.event.impl.inventory.EventDropSlot}.
+     */
+    public final int slot;
+
+    /**
+     * Stores the screen reference and click values unchanged, and initializes the event with the client core.
+     * A {@code null} screen is accepted and is not dereferenced here.
+     * @param screen source container screen; may be {@code null}
+     * @param mode numeric click-action ID; no click-type range is enforced
+     * @param button action button or key number
+     * @param slot source inventory-menu index; the out-of-window convention is not validated
+     */
+    public EventClickSlot(AbstractContainerScreen<?> screen, int mode, int button, int slot) {
+        super(JsMacrosClient.clientCore);
+        this.screen = screen;
+        this.mode = mode;
+        this.button = button;
+        this.slot = slot;
+    }
+
+    /**
+     * Returns a fresh {@link Inventory} wrapper for the menu of the screen where the click
+     * occurred. The wrapper refers to that same menu; {@code -999} is not a menu slot.
+     *
+     * @return the inventory of the screen this click happened in
+     */
+    public Inventory<?> getInventory() {
+        return Inventory.create(screen);
+    }
+
+    /**
+     * Formats a diagnostic string using the event name, stored slot, and screen name.
+     * The result has the form {@code %s:{"slot": %d, "screen": "%s"}}; a null screen name appears as the quoted text {@code "null"}.
+     * @return formatted diagnostic string; this is not JSON serialization
+     */
+    @Override
+    public String toString() {
+        return String.format("%s:{\"slot\": %d, \"screen\": \"%s\"}", this.getEventName(), slot, JsMacrosClient.getScreenName(screen));
+    }
+
+}

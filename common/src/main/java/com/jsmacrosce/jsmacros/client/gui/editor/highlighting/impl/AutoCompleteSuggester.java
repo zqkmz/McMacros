@@ -1,0 +1,112 @@
+package com.jsmacrosce.jsmacros.client.gui.editor.highlighting.impl;
+
+import com.jsmacrosce.doclet.DocletIgnore;
+import com.jsmacrosce.jsmacros.client.JsMacrosClient;
+import com.jsmacrosce.jsmacros.core.extensions.LanguageExtension;
+import com.jsmacrosce.jsmacros.core.language.BaseLanguage;
+import com.jsmacrosce.jsmacros.core.library.LibraryRegistry;
+
+import java.io.File;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
+
+@DocletIgnore
+public class AutoCompleteSuggester {
+    private final Set<String> suggestions = new LinkedHashSet<>();
+    private final String language;
+    private final String method_separator;
+
+    public AutoCompleteSuggester(String language) {
+        switch (language) {
+            case "python":
+                this.language = ".py";
+                this.method_separator = ".";
+                break;
+            case "lua":
+                this.language = ".lua";
+                this.method_separator = ":";
+                break;
+            case "ruby":
+                this.language = ".rb";
+                this.method_separator = ".";
+                break;
+            default:
+                this.language = ".js";
+                this.method_separator = ".";
+                break;
+        }
+        generateSuggestionTree();
+    }
+
+    private void generateSuggestionTree() {
+        LibraryRegistry registry = JsMacrosClient.clientCore.libraryRegistry;
+        LanguageExtension ex = JsMacrosClient.clientCore.extensions.getExtensionForFile(new File(language));
+        if (ex == null) {
+            ex = JsMacrosClient.clientCore.extensions.getHighestPriorityExtension();
+        }
+        Class<? extends BaseLanguage> lang = ex.getLanguage(JsMacrosClient.clientCore).getClass();
+
+        Map<String, Class<?>> libs = new HashMap<>();
+        registry.libraries.forEach((k, v) -> {
+            libs.put(k.value(), v.getClass());
+        });
+        registry.perExec.forEach((k, v) -> {
+            libs.put(k.value(), v);
+        });
+        registry.perLanguage.getOrDefault(lang, new HashMap<>()).forEach((k, v) -> {
+            libs.put(k.value(), v.getClass());
+        });
+        registry.perExecLanguage.getOrDefault(lang, new HashMap<>()).forEach((k, v) -> {
+            libs.put(k.value(), v);
+        });
+        libs.forEach((k, v) -> {
+            for (Method m : v.getDeclaredMethods()) {
+                if (!Modifier.isPublic(m.getModifiers()) || Modifier.isStatic(m.getModifiers())) {
+                    continue;
+                }
+                String sigBuilder = k + method_separator + m.getName() + "(";
+                suggestions.add(sigBuilder);
+            }
+        });
+        if (language.equals(".js") || language.equals(".py")) {
+            // Read the registered type list so opening autocomplete does not need to start a script.
+            JsMacrosClient.clientCore.scriptTypeRegistry.snapshot().forEach((namespace, types) -> {
+                suggestions.add(namespace + ".");
+                types.forEach((name, type) -> {
+                    String prefix = namespace + "." + name;
+                    suggestions.add(prefix);
+                    // Only statics are callable on the exported type; instance methods need an object.
+                    for (Method method : type.getMethods()) {
+                        if (Modifier.isStatic(method.getModifiers()) && !method.isSynthetic()) {
+                            suggestions.add(prefix + "." + method.getName() + "(");
+                        }
+                    }
+                });
+            });
+        }
+    }
+
+    /**
+     * Returns the signatures starting with the given text, ignoring case.
+     *
+     * <p>A scan beats a prefix trie here: the list is a few hundred short strings, so one query is
+     * a couple of microseconds, while a trie rebuilds a string for every match and does the most
+     * work for the shortest prefixes. {@code regionMatches} compares without allocating a
+     * lowercase copy of either side.
+     */
+    public Set<String> getSuggestions(String start) {
+        Set<String> matches = new LinkedHashSet<>();
+        int length = start.length();
+        for (String suggestion : suggestions) {
+            if (suggestion.regionMatches(true, 0, start, 0, length)) {
+                matches.add(suggestion);
+            }
+        }
+        return matches;
+    }
+
+}

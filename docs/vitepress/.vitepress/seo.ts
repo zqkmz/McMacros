@@ -1,0 +1,72 @@
+/**
+ * Site-wide metadata for link embeds and search engines.
+ *
+ * Everything a crawler or chat client needs is derived from one origin so a
+ * deployment to a different host only changes `SITE_URL`.
+ */
+export const SITE_URL = 'https://jsmacrosce.com'
+export const SITE_NAME = 'JsMacrosCE'
+export const SITE_DESCRIPTION = 'Minecraft mod for JavaScript/polyglot macros.'
+/**
+ * The social card, served from the site root by VitePress's public directory.
+ *
+ * It is square on purpose: Discord and Slack choose their compact thumbnail
+ * layout from the image's aspect ratio, so a square card keeps a pasted link to
+ * one short block instead of a full-width image below the text. A wide card
+ * cannot be used with `summary`, which expects roughly 2:1.
+ */
+export const SOCIAL_IMAGE = `${SITE_URL}/jsmacrosce-og.png`
+export const SOCIAL_IMAGE_WIDTH = 630
+export const SOCIAL_IMAGE_HEIGHT = 630
+
+/**
+ * The absolute site path of a page, without a trailing `.html`.
+ *
+ * VitePress writes `guide/index.md` as `guide/` and `a/b.md` as `a/b`, and a
+ * canonical URL has to use the same shape as the page it points at.
+ */
+export function pagePath(relativePath: string): string {
+  const path = `/${relativePath}`
+    .replace(/(^|\/)index\.md$/, '$1')
+    .replace(/\.md$/, '')
+  return path === '' ? '/' : path
+}
+
+/** The address a crawler should treat as the one copy of a page. */
+export function canonicalUrl(relativePath: string): string {
+  return `${SITE_URL}${pagePath(relativePath)}`
+}
+
+/**
+ * The published plain-markdown copy of a reference page.
+ *
+ * The doclet writes the twin at the same route with `.md` appended, and the site
+ * assembly publishes it from `public/`. Directory routes use `index.md`, matching
+ * the llms.txt convention for a page that is not already a file URL.
+ */
+export function markdownTwinUrl(relativePath: string): string {
+  const path = pagePath(relativePath)
+  return `${SITE_URL}${path.endsWith('/') ? `${path}index.md` : `${path}.md`}`
+}
+
+/**
+ * Whether a page should carry the social card at all.
+ *
+ * A reference page repeats one logo across thousands of near-identical links, so
+ * the image only lengthens the embed there; the title and description already say
+ * which type the link points at. Site pages keep the card.
+ */
+export function showsSocialCard(relativePath: string, snapshotPrefixes: string[]): boolean {
+  return !isReferencePage(relativePath, snapshotPrefixes)
+}
+
+/**
+ * Whether a page belongs to a generated API snapshot rather than the guide.
+ *
+ * Snapshot pages document a single Minecraft target, so they are published as
+ * articles; the guide and the home page stay `website`.
+ */
+export function isReferencePage(relativePath: string, snapshotPrefixes: string[]): boolean {
+  const route = `/${relativePath}`
+  return snapshotPrefixes.some(prefix => route.startsWith(`${prefix}/`))
+}

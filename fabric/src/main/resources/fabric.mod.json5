@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "jsmacrosce",
+  "version": "${version}",
+  "name": "Js Macros Community Edition",
+  "description": "Javascript Macros for Fabric",
+  "authors": [
+    "East_Arctica",
+    "wagyourtail"
+  ],
+  "contact": {
+    "homepage": "https://jsmacrosce.com/",
+    "sources": "https://github.com/JsMacrosCE/JsMacros"
+  },
+  "license": "MPL-2.0",
+  "icon": "assets/jsmacrosce/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "main": [
+      "com.jsmacrosce.jsmacros.fabric.client.JsMacrosFabric"
+    ],
+    "client": [
+      "com.jsmacrosce.jsmacros.fabric.client.JsMacrosFabric"
+    ],
+    "modmenu": [
+      "com.jsmacrosce.jsmacros.fabric.client.ModMenuEntry"
+    ]
+  },
+  "mixins": [
+    "jsmacrosce-common.mixins.json",
+    "jsmacrosce-fabric.mixins.json"
+  ],
+  "accessWidener": "accesswideners/${access_widener}",
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "fabric-api": "*",
+      "minecraft": "${fabric_minecraft_version_range}"
+  }
+}
