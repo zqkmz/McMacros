@@ -55,6 +55,7 @@ import com.jsmacrosce.jsmacros.util.ChunkPosCompat;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.security.PublicKey;
 import java.time.Instant;
@@ -2386,35 +2387,49 @@ public class PacketByteBufferHelper extends BaseHelper<FriendlyByteBuf> {
         registerPacketCodecsAndMetadata();
     }
 
+    // Minecraft's packet registry classes, referenced directly instead of by name. Outside the development
+    // environment Minecraft's classes and fields carry obfuscated names, so looking them up with strings
+    // (Class.forName("...GamePacketTypes"), field names like "STREAM_CODEC") fails and crashed the mod on start.
+    // Class literals are renamed together with Minecraft when the mod is built, so they work everywhere.
+    private static final Class<?>[] PACKET_TYPE_CLASSES = {
+            net.minecraft.network.protocol.handshake.HandshakePacketTypes.class,
+            net.minecraft.network.protocol.status.StatusPacketTypes.class,
+            net.minecraft.network.protocol.login.LoginPacketTypes.class,
+            net.minecraft.network.protocol.configuration.ConfigurationPacketTypes.class,
+            net.minecraft.network.protocol.game.GamePacketTypes.class,
+            net.minecraft.network.protocol.common.CommonPacketTypes.class,
+            net.minecraft.network.protocol.cookie.CookiePacketTypes.class,
+            net.minecraft.network.protocol.ping.PingPacketTypes.class,
+    };
+    private static final Class<?>[] PROTOCOL_CLASSES = {
+            net.minecraft.network.protocol.handshake.HandshakeProtocols.class,
+            net.minecraft.network.protocol.status.StatusProtocols.class,
+            net.minecraft.network.protocol.login.LoginProtocols.class,
+            net.minecraft.network.protocol.configuration.ConfigurationProtocols.class,
+            net.minecraft.network.protocol.game.GameProtocols.class,
+    };
+
     private static void registerPacketCodecsAndMetadata() {
-        String root = "net.minecraft.network.protocol.";
-        String[] phases = {"handshake", "status", "login", "configuration", "game"};
         Map<PacketType<?>, Class<? extends Packet<?>>> classes = new HashMap<>();
-        String[] typePackages = {"handshake", "status", "login", "configuration", "game", "common", "cookie", "ping"};
-        for (String phase : typePackages) {
+        for (Class<?> types : PACKET_TYPE_CLASSES) {
             try {
-                Class<?> types = Class.forName(root + phase + "." + switch (phase) {
-                    case "game" -> "GamePacketTypes";
-                    default -> Character.toUpperCase(phase.charAt(0)) + phase.substring(1) + "PacketTypes";
-                });
                 for (Field field : types.getFields()) {
-                    if (!(field.getGenericType() instanceof ParameterizedType generic) ||
+                    if (!Modifier.isStatic(field.getModifiers()) ||
+                            !(field.getGenericType() instanceof ParameterizedType generic) ||
                             !(generic.getActualTypeArguments()[0] instanceof Class<?> packetClass) ||
                             !Packet.class.isAssignableFrom(packetClass)) continue;
                     classes.put((PacketType<?>) field.get(null), (Class<? extends Packet<?>>) packetClass);
                 }
             } catch (ReflectiveOperationException e) {
-                throw new IllegalStateException("Cannot read packet types for " + phase, e);
+                throw new IllegalStateException("Cannot read packet types from " + types, e);
             }
         }
-        for (String phase : phases) {
+        for (Class<?> protocols : PROTOCOL_CLASSES) {
             try {
-                Class<?> protocols = Class.forName(root + phase + "." + switch (phase) {
-                    case "game" -> "GameProtocols";
-                    default -> Character.toUpperCase(phase.charAt(0)) + phase.substring(1) + "Protocols";
-                });
                 for (Field field : protocols.getFields()) {
-                    if (!field.getName().endsWith("_TEMPLATE")) continue;
+                    // The *_TEMPLATE fields are the ones that describe a whole protocol; pick them by type, not name.
+                    if (!Modifier.isStatic(field.getModifiers()) ||
+                            !ProtocolInfo.DetailsProvider.class.isAssignableFrom(field.getType())) continue;
                     ProtocolInfo.Details details = ((ProtocolInfo.DetailsProvider) field.get(null)).details();
                     details.listPackets((type, index) -> {
                         Class<? extends Packet<?>> packetClass = classes.get(type);
@@ -2425,7 +2440,7 @@ public class PacketByteBufferHelper extends BaseHelper<FriendlyByteBuf> {
                     });
                 }
             } catch (ReflectiveOperationException e) {
-                throw new IllegalStateException("Cannot read packet protocols for " + phase, e);
+                throw new IllegalStateException("Cannot read packet protocols from " + protocols, e);
             }
         }
         for (Class<? extends Packet<?>> clazz : classes.values()) {
@@ -2440,21 +2455,38 @@ public class PacketByteBufferHelper extends BaseHelper<FriendlyByteBuf> {
         }
     }
 
+    /**
+     * Finds the packet's codec field for the given phase. A few packets have more than one codec (custom
+     * payloads and dialogs differ between the configuration and play phases); those are matched against the
+     * actual codec objects, because field names are obfuscated outside the development environment.
+     */
     @Nullable
     private static Field findCodecField(Class<?> clazz, String protocol) {
-        String preferred = null;
-        if (protocol.equalsIgnoreCase("configuration")) {
-            if (clazz == ClientboundCustomPayloadPacket.class) preferred = "CONFIG_STREAM_CODEC";
-            else if (clazz.getSimpleName().equals("ClientboundShowDialogPacket")) preferred = "CONTEXT_FREE_STREAM_CODEC";
-        } else if (clazz == ClientboundCustomPayloadPacket.class) {
-            preferred = "GAMEPLAY_STREAM_CODEC";
+        Object preferred = null;
+        boolean configuration = protocol.equalsIgnoreCase("configuration");
+        if (clazz == ClientboundCustomPayloadPacket.class) {
+            preferred = configuration ? ClientboundCustomPayloadPacket.CONFIG_STREAM_CODEC : ClientboundCustomPayloadPacket.GAMEPLAY_STREAM_CODEC;
+        } else if (clazz == net.minecraft.network.protocol.common.ClientboundShowDialogPacket.class && configuration) {
+            preferred = net.minecraft.network.protocol.common.ClientboundShowDialogPacket.CONTEXT_FREE_STREAM_CODEC;
         }
-        String codecName = preferred;
-        return Arrays.stream(clazz.getFields())
+        List<Field> codecs = Arrays.stream(clazz.getFields())
+                .filter(field -> Modifier.isStatic(field.getModifiers()))
                 .filter(field -> StreamCodec.class.isAssignableFrom(field.getType()))
-                .filter(field -> field.getName().equals("STREAM_CODEC") || field.getName().equals(codecName))
-                .sorted(Comparator.comparingInt(field -> field.getName().equals(codecName) ? 0 : 1))
-                .findFirst().orElse(null);
+                .toList();
+        if (codecs.isEmpty()) return null;
+        if (preferred != null) {
+            for (Field field : codecs) {
+                try {
+                    if (field.get(null) == preferred) return field;
+                } catch (IllegalAccessException ignored) {
+                }
+            }
+        }
+        for (Field field : codecs) {
+            if (field.getName().equals("STREAM_CODEC")) return field;
+        }
+        // Outside the development environment names are obfuscated; packets almost always have a single codec.
+        return codecs.get(0);
     }
 
     private static ConnectionProtocol resolveProtocol(String protocol) {
