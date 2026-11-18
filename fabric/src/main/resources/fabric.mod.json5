@@ -1,15 +1,17 @@
 {
   "schemaVersion": 1,
-  "id": "jsmacrosce",
+  "id": "mcmacros",
   "version": "${version}",
-  "name": "Js Macros Community Edition",
-  "description": "Javascript Macros for Fabric",
+  "name": "McMacros",
+  "description": "使いやすく改造したマクロmod。JsMacros Community Edition をもとにしています。\nEasy-to-use macro mod, based on JsMacros Community Edition.",
   "authors": [
-    "East_Arctica",
-    "wagyourtail"
+    "McMacros"
+  ],
+  "contributors": [
+    "East_Arctica (JsMacros CE)",
+    "wagyourtail (JsMacros)"
   ],
   "contact": {
-    "homepage": "https://jsmacrosce.com/",
     "sources": "https://github.com/JsMacrosCE/JsMacros"
   },
   "license": "MPL-2.0",
