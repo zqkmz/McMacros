@@ -31,7 +31,7 @@ public class CancelScreen extends BaseScreen {
     private final List<RunningContextContainer> running = new ArrayList<>();
 
     public CancelScreen(Screen parent) {
-        super(Component.literal("Cancel"), parent);
+        super(Component.translatable("jsmacrosce.cancelscreen"), parent);
     }
 
     @Override

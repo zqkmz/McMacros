@@ -76,5 +76,12 @@
   "jsmacrosce.showrunningservices": "動作中のサービスを表示",
   "jsmacrosce.serviceautoreload": "サービスのファイルが変わったら自動で読み込み直す",
   "jsmacrosce.sortservices": "サービス一覧の並び順",
-  "jsmacrosce.showslotindexes": "スロット番号を表示"
+  "jsmacrosce.showslotindexes": "スロット番号を表示",
+  "jsmacrosce.about.docs": "使い方（英語）",
+  "jsmacrosce.about.original": "元のmod",
+  "jsmacrosce.about.license": "ライセンス",
+  "jsmacrosce.servicerename.prompt": "新しいサービス名を入力してください",
+  "jsmacrosce.servicerename.failed": "サービスの名前を変更できませんでした",
+  "jsmacrosce.cancelscreen": "動作中のスクリプト",
+  "jsmacrosce.editor": "エディタ"
 }

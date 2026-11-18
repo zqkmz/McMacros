@@ -38,9 +38,9 @@ public class ServiceContainer extends MultiElementContainer<MacroScreen> {
 
         int w = width - 12;
         nameBtn = addRenderableWidget(new Button(x + 1, y + 1, w * 2 / 12 - 1, height - 2, textRenderer, 0, 0xFF000000, 0x7F7F7F7F, 0xFFFFFFFF, Component.literal(service), (btn) -> {
-            openOverlay(new TextPrompt(parent.width / 4, parent.height / 4, parent.width / 2, parent.height / 2, textRenderer, Component.literal("Enter new service name"), service, getFirstOverlayParent(), (newService) -> {
+            openOverlay(new TextPrompt(parent.width / 4, parent.height / 4, parent.width / 2, parent.height / 2, textRenderer, Component.translatable("jsmacrosce.servicerename.prompt"), service, getFirstOverlayParent(), (newService) -> {
                 if (!JsMacrosClient.clientCore.services.renameService(service, newService)) {
-                    openOverlay(new TextOverlay(parent.width / 4, parent.height / 4, parent.width / 2, parent.height / 2, textRenderer, getFirstOverlayParent(), Component.literal("Failed to rename service").withStyle(s -> s.withColor(ChatFormatting.RED))));
+                    openOverlay(new TextOverlay(parent.width / 4, parent.height / 4, parent.width / 2, parent.height / 2, textRenderer, getFirstOverlayParent(), Component.translatable("jsmacrosce.servicerename.failed").withStyle(s -> s.withColor(ChatFormatting.RED))));
                     return;
                 }
                 service = newService;

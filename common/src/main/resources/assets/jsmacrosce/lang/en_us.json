@@ -76,5 +76,12 @@
   "jsmacrosce.showrunningservices": "Show running services",
   "jsmacrosce.serviceautoreload": "Auto reload services on change",
   "jsmacrosce.sortservices": "Service List Sort Method",
-  "jsmacrosce.showslotindexes": "Show slot indexes"
+  "jsmacrosce.showslotindexes": "Show slot indexes",
+  "jsmacrosce.about.docs": "Docs (English)",
+  "jsmacrosce.about.original": "Original mod",
+  "jsmacrosce.about.license": "License",
+  "jsmacrosce.servicerename.prompt": "Enter new service name",
+  "jsmacrosce.servicerename.failed": "Failed to rename service",
+  "jsmacrosce.cancelscreen": "Running scripts",
+  "jsmacrosce.editor": "Editor"
 }

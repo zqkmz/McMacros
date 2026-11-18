@@ -58,11 +58,11 @@ public class AboutOverlay extends OverlayContainer {
         int w = width - 4;
         this.addRenderableWidget(new Button(x + width - 12, y + 2, 10, 10, textRenderer, 0, 0x7FFFFFFF, 0x7FFFFFFF, 0xFFFFFFFF, Component.literal("X"), (btn) -> this.close()));
 
-        this.addRenderableWidget(new Button(x + 2, y + height - 14, w / 3, 12, textRenderer, 0, 0x7FFFFFFF, 0x7FFFFFFF, 0xFFFFFFFF, Component.literal("Website"), (btn) -> PlatformCompat.openUri("https://jsmacrosce.com")));
+        this.addRenderableWidget(new Button(x + 2, y + height - 14, w / 3, 12, textRenderer, 0, 0x7FFFFFFF, 0x7FFFFFFF, 0xFFFFFFFF, Component.translatable("jsmacrosce.about.docs"), (btn) -> PlatformCompat.openUri("https://jsmacrosce.com")));
 
-        this.addRenderableWidget(new Button(x + w / 3 + 2, y + height - 14, w / 3, 12, textRenderer, 0, 0x7FFFFFFF, 0x7FFFFFFF, 0xFFFFFFFF, Component.literal("Discord"), (btn) -> PlatformCompat.openUri("https://discord.gg/UaB82D59Fu")));
+        this.addRenderableWidget(new Button(x + w / 3 + 2, y + height - 14, w / 3, 12, textRenderer, 0, 0x7FFFFFFF, 0x7FFFFFFF, 0xFFFFFFFF, Component.translatable("jsmacrosce.about.original"), (btn) -> PlatformCompat.openUri("https://modrinth.com/mod/jsmacrosce")));
 
-        this.addRenderableWidget(new Button(x + w * 2 / 3 + 2, y + height - 14, w / 3, 12, textRenderer, 0, 0x7FFFFFFF, 0x7FFFFFFF, 0xFFFFFFFF, Component.literal("Modrinth"), (btn) -> PlatformCompat.openUri("https://modrinth.com/mod/jsmacrosce")));
+        this.addRenderableWidget(new Button(x + w * 2 / 3 + 2, y + height - 14, w / 3, 12, textRenderer, 0, 0x7FFFFFFF, 0x7FFFFFFF, 0xFFFFFFFF, Component.translatable("jsmacrosce.about.license"), (btn) -> PlatformCompat.openUri("https://www.mozilla.org/MPL/2.0/")));
 
         this.setMessage(Component.translatable("jsmacrosce.aboutinfo"));
     }

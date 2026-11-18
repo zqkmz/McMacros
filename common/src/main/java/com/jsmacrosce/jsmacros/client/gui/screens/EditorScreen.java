@@ -117,7 +117,7 @@ public class EditorScreen extends BaseScreen {
     public AbstractRenderCodeCompiler codeCompiler;
 
     public EditorScreen(Screen parent, @NotNull File file) {
-        super(Component.literal("Editor"), parent);
+        super(Component.translatable("jsmacrosce.editor"), parent);
         this.file = file;
         FileHandler handler = new FileHandler(file);
         String content;
