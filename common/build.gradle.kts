@@ -12,7 +12,14 @@ val mod_id = commonMod.modId
 val minecraft_version = commonMod.mc
 
 neoForge {
-    commonMod.propOrNull("neo_form_version")?.let { neoFormVersion = it }
+    // Skip decompiling/recompiling Minecraft for the shared code: it only needs to compile
+    // against Minecraft, and the decompiler needs more memory than small build machines have.
+    commonMod.propOrNull("neo_form_version")?.let { nf ->
+        enable {
+            neoFormVersion = nf
+            disableRecompilation = true
+        }
+    }
 
     accessTransformers.from(
         layout.buildDirectory.file("generated/access-transformer/accesstransformer.cfg")
