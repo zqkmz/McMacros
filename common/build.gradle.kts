@@ -17,7 +17,7 @@ neoForge {
     commonMod.propOrNull("neo_form_version")?.let { nf ->
         enable {
             neoFormVersion = nf
-            disableRecompilation = true
+            setDisableRecompilation(true)
         }
     }
 
