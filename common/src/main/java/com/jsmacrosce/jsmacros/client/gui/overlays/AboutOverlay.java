@@ -114,8 +114,8 @@ public class AboutOverlay extends OverlayContainer {
         //? }
         renderMessage(drawContext);
 
-        drawContext.fill(x + 2, y + 12, x + width - 2, y + 13, 0xFFFFFFFF);
-        drawContext.fill(x + 2, y + height - 15, x + width - 2, y + height - 14, 0xFFFFFFFF);
+        drawContext.fill(x + 2, y + 12, x + width - 2, y + 13, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x + 2, y + height - 15, x + width - 2, y + height - 14, com.jsmacrosce.wagyourgui.McTheme.LINE);
         //? if >=26.1 {
         /*super.extractRenderState(drawContext, mouseX, mouseY, delta);
         *///? } else {

@@ -799,12 +799,12 @@ public class EditorScreen extends BaseScreen {
         drawContext.drawString(font, lineCol, (int) (width - font.width(lineCol) - (width - 10) / 4F - 2), height - 10, 0xFFFFFFFF);
         //? }
 
-        drawContext.fill(0, 12, width - 10, height - 12, 0xFF2B2B2B);
-        drawContext.fill(lineNumWidth, 12, lineNumWidth + 1, height - 12, 0xFF707070);
-        drawContext.fill(0, 12, 1, height - 12, 0xFF707070);
-        drawContext.fill(width - 11, 12, width - 10, height - 12, 0xFF707070);
-        drawContext.fill(1, 12, width - 11, 13, 0xFF707070);
-        drawContext.fill(1, height - 13, width - 11, height - 12, 0xFF707070);
+        drawContext.fill(0, 12, width - 10, height - 12, 0xFF07111C);
+        drawContext.fill(lineNumWidth, 12, lineNumWidth + 1, height - 12, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(0, 12, 1, height - 12, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(width - 11, 12, width - 10, height - 12, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(1, 12, width - 11, 13, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(1, height - 13, width - 11, height - 12, com.jsmacrosce.wagyourgui.McTheme.LINE);
 
         Style lineNumStyle = defaultStyle.withColor(TextColor.fromRgb(0xFFD8D8D8));
         // Negative offset: firstLine's top edge relative to the viewport top (may be < 0 for partial top line).

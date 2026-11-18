@@ -325,6 +325,32 @@ public abstract class BaseScreen extends Screen implements IOverlayParent {
     }
     //? }
 
+    /**
+     * Whether this screen uses the McMacros look (dark background, themed widgets). McMacros' own screens
+     * do; screens that scripts build return false so they look exactly as the script draws them.
+     * @return true to apply the McMacros theme
+     */
+    public boolean isMcThemed() {
+        return true;
+    }
+
+    //? if <26.1 {
+    /** Draws the McMacros background (dark navy with a faint grid) instead of the vanilla one on themed screens.
+     * @param drawContext graphics context
+     * @param mouseX mouse X coordinate in GUI space
+     * @param mouseY mouse Y coordinate in GUI space
+     * @param delta frame delta
+     */
+    @Override
+    public void renderBackground(GuiGraphics drawContext, int mouseX, int mouseY, float delta) {
+        if (isMcThemed()) {
+            McTheme.background(drawContext, this.width, this.height);
+        } else {
+            super.renderBackground(drawContext, mouseX, mouseY, delta);
+        }
+    }
+    //?}
+
     /** Reports whether the native Escape-close path is allowed; this query does not close anything.
      * @return true when no direct overlay is set, false otherwise
      */

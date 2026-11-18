@@ -297,8 +297,8 @@ public class FileChooser extends OverlayContainer {
         drawContext.drawWordWrap(textRenderer, this.dirname, x + 3, y + 3, width - 14, 0xFFFFFFFF, false);
         //? }
 
-        drawContext.fill(x + 2, y + 12, x + width - 2, y + 13, 0xFFFFFFFF);
-        drawContext.fill(x + 2, y + height - 15, x + width - 2, y + height - 14, 0xFFFFFFFF);
+        drawContext.fill(x + 2, y + 12, x + width - 2, y + 13, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x + 2, y + height - 15, x + width - 2, y + height - 14, com.jsmacrosce.wagyourgui.McTheme.LINE);
 //        textRenderer.draw(, mouseX, mouseY, color, shadow, matrix, vertexConsumers, seeThrough, backgroundColor, light)
         //? if >=26.1 {
         /*super.extractRenderState(drawContext, mouseX, mouseY, delta);
@@ -310,13 +310,13 @@ public class FileChooser extends OverlayContainer {
             if (b instanceof Button && ((Button) b).hovering && ((Button) b).cantRenderAllText()) {
                 // border
                 int width = textRenderer.width(b.getMessage());
-                drawContext.fill(mouseX - 3, mouseY, mouseX + width + 3, mouseY + 1, 0x7F7F7F7F);
-                drawContext.fill(mouseX + width + 2, mouseY - textRenderer.lineHeight - 3, mouseX + width + 3, mouseY, 0x7F7F7F7F);
-                drawContext.fill(mouseX - 3, mouseY - textRenderer.lineHeight - 3, mouseX - 2, mouseY, 0x7F7F7F7F);
-                drawContext.fill(mouseX - 3, mouseY - textRenderer.lineHeight - 4, mouseX + width + 3, mouseY - textRenderer.lineHeight - 3, 0x7F7F7F7F);
+                drawContext.fill(mouseX - 3, mouseY, mouseX + width + 3, mouseY + 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+                drawContext.fill(mouseX + width + 2, mouseY - textRenderer.lineHeight - 3, mouseX + width + 3, mouseY, com.jsmacrosce.wagyourgui.McTheme.LINE);
+                drawContext.fill(mouseX - 3, mouseY - textRenderer.lineHeight - 3, mouseX - 2, mouseY, com.jsmacrosce.wagyourgui.McTheme.LINE);
+                drawContext.fill(mouseX - 3, mouseY - textRenderer.lineHeight - 4, mouseX + width + 3, mouseY - textRenderer.lineHeight - 3, com.jsmacrosce.wagyourgui.McTheme.LINE);
 
                 // fill
-                drawContext.fill(mouseX - 2, mouseY - textRenderer.lineHeight - 3, mouseX + width + 2, mouseY, 0xFF000000);
+                drawContext.fill(mouseX - 2, mouseY - textRenderer.lineHeight - 3, mouseX + width + 2, mouseY, com.jsmacrosce.wagyourgui.McTheme.PANEL);
                 //? if >=26.1 {
                 /*drawContext.text(textRenderer, b.getMessage(), mouseX, mouseY - textRenderer.lineHeight - 1, 0xFFFFFFFF);
                 *///? } else {

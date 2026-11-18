@@ -125,7 +125,7 @@ public class ConfirmOverlay extends OverlayContainer {
     public void render(final GuiGraphics drawContext, int mouseX, int mouseY, final float delta) {
     //? }
         this.renderBackground(drawContext);
-        drawContext.fill(x + 1, y + height - 13, x + width - 1, y + height - 12, 0xFFFFFFFF);
+        drawContext.fill(x + 1, y + height - 13, x + width - 1, y + height - 12, com.jsmacrosce.wagyourgui.McTheme.LINE);
         this.renderMessage(drawContext);
         //? if >=26.1 {
         /*super.extractRenderState(drawContext, mouseX, mouseY, delta);

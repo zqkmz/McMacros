@@ -195,18 +195,24 @@ public abstract class OverlayContainer extends MultiElementContainer<IOverlayPar
      * @param drawContext graphics context receiving the fill operations
      */
     public void renderBackground(GuiGraphics drawContext) {
+        if (com.jsmacrosce.wagyourgui.McTheme.enabled()) {
+            // McMacros look: navy panel with cut corners and a bright outline
+            com.jsmacrosce.wagyourgui.McTheme.panel(drawContext, x, y, x + width, y + height, com.jsmacrosce.wagyourgui.McTheme.CUT_LARGE,
+                    0xFA0A1B2C, com.jsmacrosce.wagyourgui.McTheme.LINE_BRIGHT);
+            return;
+        }
         // black bg
-        drawContext.fill(x, y, x + width, y + height, 0xFF000000);
+        drawContext.fill(x, y, x + width, y + height, com.jsmacrosce.wagyourgui.McTheme.PANEL);
         // 2 layer border
-        drawContext.fill(x, y, x + width, y + 1, 0x7F7F7F7F);
-        drawContext.fill(x, y + height - 1, x + width, y + height, 0x7F7F7F7F);
-        drawContext.fill(x, y + 1, x + 1, y + height - 1, 0x7F7F7F7F);
-        drawContext.fill(x + width - 1, y + 1, x + width, y + height - 1, 0x7F7F7F7F);
+        drawContext.fill(x, y, x + width, y + 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x, y + height - 1, x + width, y + height, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x, y + 1, x + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x + width - 1, y + 1, x + width, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
 
-        drawContext.fill(x + 1, y + 1, x + width - 1, y + 2, 0xFFFFFFFF);
-        drawContext.fill(x + 1, y + height - 2, x + width - 1, y + height - 1, 0xFFFFFFFF);
-        drawContext.fill(x + 1, y + 1, x + 2, y + height - 1, 0xFFFFFFFF);
-        drawContext.fill(x + width - 2, y + 1, x + width - 1, y + height - 1, 0xFFFFFFFF);
+        drawContext.fill(x + 1, y + 1, x + width - 1, y + 2, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x + 1, y + height - 2, x + width - 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x + 1, y + 1, x + 2, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x + width - 2, y + 1, x + width - 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
 
     }
 

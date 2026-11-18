@@ -164,10 +164,10 @@ public class SettingsOverlay extends OverlayContainer implements ICategoryTreePa
         *///? } else {
         drawContext.drawWordWrap(textRenderer, title, x + 3, y + 3, width - 14, 0xFFFFFFFF, false);
         //? }
-        drawContext.fill(x + 2, y + 12, x + width - 2, y + 13, 0xFFFFFFFF);
+        drawContext.fill(x + 2, y + 12, x + width - 2, y + 13, com.jsmacrosce.wagyourgui.McTheme.LINE);
 
         //sep
-        drawContext.fill(x + w / 3, y + 13, x + w / 3 + 1, y + height, 0xFFFFFFFF);
+        drawContext.fill(x + w / 3, y + 13, x + w / 3 + 1, y + height, com.jsmacrosce.wagyourgui.McTheme.LINE);
 
         if (category != null) {
             //? if >=26.1 {

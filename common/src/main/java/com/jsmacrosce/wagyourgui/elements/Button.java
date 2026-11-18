@@ -8,6 +8,7 @@ import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 import com.jsmacrosce.jsmacros.util.ColorMath;
+import com.jsmacrosce.wagyourgui.McTheme;
 
 //? if >1.21.8 {
 /*import net.minecraft.client.input.InputWithModifiers;
@@ -176,12 +177,22 @@ public class Button extends AbstractButton {
     public void renderWidget(GuiGraphics drawContext, int mouseX, int mouseY, float delta) {
     //? }
         if (this.visible) {
+            hovering = mouseX - getX() >= 0 && mouseX - getX() - width < 0 && mouseY - getY() >= 0 && mouseY - getY() - height < 0 && this.active || forceHover;
+            if (McTheme.enabled()) {
+                // McMacros look: cut corners, navy fill, glowing outline on hover
+                int cut = Math.min(McTheme.CUT_SMALL, Math.min(width, height) / 4);
+                McTheme.fillCut(drawContext, getX(), getY(), getX() + width, getY() + height, cut, hovering ? McTheme.hover(highlightColor) : McTheme.fill(color));
+                McTheme.outlineCut(drawContext, getX(), getY(), getX() + width, getY() + height, cut, hovering ? McTheme.LINE_BRIGHT : McTheme.border(borderColor));
+                int original = textColor;
+                textColor = McTheme.text(textColor);
+                this.renderMessage(drawContext);
+                textColor = original;
+                return;
+            }
             // fill
-            if (mouseX - getX() >= 0 && mouseX - getX() - width < 0 && mouseY - getY() >= 0 && mouseY - getY() - height < 0 && this.active || forceHover) {
-                hovering = true;
+            if (hovering) {
                 drawContext.fill(getX() + 1, getY() + 1, getX() + width - 1, getY() + height - 1, highlightColor);
             } else {
-                hovering = false;
                 drawContext.fill(getX() + 1, getY() + 1, getX() + width - 1, getY() + height - 1, color);
             }
             // outline

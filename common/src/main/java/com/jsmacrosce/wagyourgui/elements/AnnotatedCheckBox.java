@@ -116,9 +116,25 @@ public class AnnotatedCheckBox extends Button {
     public void renderWidget(GuiGraphics drawContext, int mouseX, int mouseY, float delta) {
     //? }
         if (this.visible) {
-            this.renderMessage(drawContext);
-
             boolean hovered = (mouseX - getX() >= 0 && mouseX - getX() - width < 0 && mouseY - getY() >= 0 && mouseY - getY() - height < 0 && this.active) || forceHover;
+            if (com.jsmacrosce.wagyourgui.McTheme.enabled()) {
+                hovering = hovered;
+                int original = textColor;
+                textColor = com.jsmacrosce.wagyourgui.McTheme.text(textColor);
+                this.renderMessage(drawContext);
+                textColor = original;
+                // McMacros look: dark box with a glowing green square when checked
+                int bx = getX() + width - height;
+                drawContext.fill(bx + 1, getY() + 1, getX() + width - 1, getY() + height - 1, com.jsmacrosce.wagyourgui.McTheme.PANEL);
+                if (value) {
+                    int pad = Math.max(2, height / 4);
+                    drawContext.fill(bx + pad, getY() + pad, getX() + width - pad, getY() + height - pad, com.jsmacrosce.wagyourgui.McTheme.SUCCESS);
+                }
+                com.jsmacrosce.wagyourgui.McTheme.outlineCut(drawContext, bx, getY(), getX() + width, getY() + height, 1,
+                        hovered ? com.jsmacrosce.wagyourgui.McTheme.LINE_BRIGHT : com.jsmacrosce.wagyourgui.McTheme.LINE);
+                return;
+            }
+            this.renderMessage(drawContext);
             hovering = hovered;
             // fill
             if (value) {

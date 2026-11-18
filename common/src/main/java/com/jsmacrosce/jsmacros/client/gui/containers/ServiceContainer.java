@@ -122,16 +122,16 @@ public class ServiceContainer extends MultiElementContainer<MacroScreen> {
     //? }
         int w = width - 12;
         //seperate
-        drawContext.fill(x + w * 2 / 12, y + 1, x + w * 2 / 12 + 1, y + height - 1, 0xFFFFFFFF);
-        drawContext.fill(x + w * 10 / 12, y + 1, x + w * 10 / 12 + 1, y + height - 1, 0xFFFFFFFF);
-        drawContext.fill(x + w * 11 / 12, y + 1, x + w * 11 / 12 + 1, y + height - 1, 0xFFFFFFFF);
-        drawContext.fill(x + width - 14, y + 1, x + width - 13, y + height - 1, 0xFFFFFFFF);
+        drawContext.fill(x + w * 2 / 12, y + 1, x + w * 2 / 12 + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x + w * 10 / 12, y + 1, x + w * 10 / 12 + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x + w * 11 / 12, y + 1, x + w * 11 / 12 + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x + width - 14, y + 1, x + width - 13, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
 
         // border
-        drawContext.fill(x, y, x + width, y + 1, 0xFFFFFFFF);
-        drawContext.fill(x, y + height - 1, x + width, y + height, 0xFFFFFFFF);
-        drawContext.fill(x, y + 1, x + 1, y + height - 1, 0xFFFFFFFF);
-        drawContext.fill(x + width - 1, y + 1, x + width, y + height - 1, 0xFFFFFFFF);
+        drawContext.fill(x, y, x + width, y + 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x, y + height - 1, x + width, y + height, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x, y + 1, x + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x + width - 1, y + 1, x + width, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
 
         if (getRunning()) {
             runningBtn.setColor(0x7000FF00);

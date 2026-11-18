@@ -68,16 +68,16 @@ public class MacroListTopbar extends MultiElementContainer<MacroScreen> {
     *///? } else {
     public void render(final GuiGraphics drawContext, int mouseX, int mouseY, final float delta) {
     //? }
-        drawContext.fill(x, y, x + width, y + 1, 0xFFFFFFFF);
-        drawContext.fill(x, y + height - 2, x + width, y + height - 1, 0xFFFFFFFF);
-        drawContext.fill(x, y + height - 1, x + width, y + height, 0xFF7F7F7F);
-        drawContext.fill(x, y + 1, x + 1, y + height - 1, 0xFFFFFFFF);
-        drawContext.fill(x + width - 1, y + 1, x + width, y + height - 1, 0xFFFFFFFF);
+        drawContext.fill(x, y, x + width, y + 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x, y + height - 2, x + width, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x, y + height - 1, x + width, y + height, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x, y + 1, x + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x + width - 1, y + 1, x + width, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
         int w = this.width - 12;
 
-        drawContext.fill(x + (w / 12), y + 1, x + (w / 12) + 1, y + height - 1, 0xFFFFFFFF);
-        drawContext.fill(x + (w / 4), y + 1, x + (w / 4) + 1, y + height - 1, 0xFFFFFFFF);
-        drawContext.fill(x + width - 14, y + 1, x + width - 13, y + height - 1, 0xFFFFFFFF);
+        drawContext.fill(x + (w / 12), y + 1, x + (w / 12) + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x + (w / 4), y + 1, x + (w / 4) + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x + width - 14, y + 1, x + width - 13, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
     }
 
 }

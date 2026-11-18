@@ -238,9 +238,9 @@ public class MacroContainer extends MultiElementContainer<MacroScreen> {
         if (visible) {
             int w = this.width - 12;
             // separate
-            drawContext.fill(x + (w / 12), y + 1, x + (w / 12) + 1, y + height - 1, 0xFFFFFFFF);
-            drawContext.fill(x + (w / 4), y + 1, x + (w / 4) + 1, y + height - 1, 0xFFFFFFFF);
-            drawContext.fill(x + width - 14, y + 1, x + width - 13, y + height - 1, 0xFFFFFFFF);
+            drawContext.fill(x + (w / 12), y + 1, x + (w / 12) + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+            drawContext.fill(x + (w / 4), y + 1, x + (w / 4) + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+            drawContext.fill(x + width - 14, y + 1, x + width - 13, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
             //RenderSystem.setShader(VertexFormats.POSITION_TEXTURE);
 
             //? if >1.21.5 {
@@ -338,14 +338,14 @@ public class MacroContainer extends MultiElementContainer<MacroScreen> {
             }
 
             // border
-            drawContext.fill(x, y, x + width, y + 1, 0xFFFFFFFF);
-            drawContext.fill(x, y + height - 1, x + width, y + height, 0xFFFFFFFF);
-            drawContext.fill(x, y + 1, x + 1, y + height - 1, 0xFFFFFFFF);
-            drawContext.fill(x + width - 1, y + 1, x + width, y + height - 1, 0xFFFFFFFF);
+            drawContext.fill(x, y, x + width, y + 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+            drawContext.fill(x, y + height - 1, x + width, y + height, com.jsmacrosce.wagyourgui.McTheme.LINE);
+            drawContext.fill(x, y + 1, x + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+            drawContext.fill(x + width - 1, y + 1, x + width, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
 
             // overlay
             if (keyBtn.hovering && keyBtn.cantRenderAllText()) {
-                drawContext.fill(mouseX - 2, mouseY - textRenderer.lineHeight - 3, mouseX + textRenderer.width(keyBtn.getMessage()) + 2, mouseY, 0xFF000000);
+                drawContext.fill(mouseX - 2, mouseY - textRenderer.lineHeight - 3, mouseX + textRenderer.width(keyBtn.getMessage()) + 2, mouseY, com.jsmacrosce.wagyourgui.McTheme.PANEL);
                 //? if >=26.1 {
                 /*drawContext.text(textRenderer, keyBtn.getMessage(), mouseX, mouseY - textRenderer.lineHeight - 1, 0xFFFFFFFF);
                 *///? } else {
@@ -356,7 +356,7 @@ public class MacroContainer extends MultiElementContainer<MacroScreen> {
                 List<FormattedCharSequence> lines = textRenderer.split(fileBtn.getMessage(), this.x + this.width - mouseX);
                 int top = mouseY - (textRenderer.lineHeight * lines.size()) - 2;
                 int width = lines.stream().map(e -> textRenderer.width(e)).reduce(0, Math::max);
-                drawContext.fill(mouseX - 2, top - 1, mouseX + width + 2, mouseY, 0xFF000000);
+                drawContext.fill(mouseX - 2, top - 1, mouseX + width + 2, mouseY, com.jsmacrosce.wagyourgui.McTheme.PANEL);
                 for (int i = 0; i < lines.size(); ++i) {
                     int wi = textRenderer.width(lines.get(i)) / 2;
                     //? if >=26.1 {

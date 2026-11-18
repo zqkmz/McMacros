@@ -278,4 +278,12 @@ public class ScriptScreen extends BaseScreen {
         return shouldCloseOnEsc && super.shouldCloseOnEsc();
     }
 
+    /** Screens built by scripts keep the colours the script chose, so the McMacros theme is not applied.
+     * @return always false
+     */
+    @Override
+    public boolean isMcThemed() {
+        return false;
+    }
+
 }

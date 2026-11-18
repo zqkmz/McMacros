@@ -199,6 +199,13 @@ public class Scrollbar extends AbstractWidget {
     *///?} else {
     protected void renderWidget(GuiGraphics drawContext, int mouseX, int mouseY, float delta) {
     //?}
+        if (com.jsmacrosce.wagyourgui.McTheme.enabled()) {
+            // McMacros look: dark track, bright thumb, blue outline
+            drawContext.fill(getX() + 1, getY() + 1, getX() + width - 1, getY() + height - 1, com.jsmacrosce.wagyourgui.McTheme.PANEL);
+            drawContext.fill(getX() + 2, (int) (getY() + 2 + scrollAmount), getX() + width - 2, (int) (getY() + scrollAmount + scrollbarHeight), com.jsmacrosce.wagyourgui.McTheme.LINE_BRIGHT);
+            com.jsmacrosce.wagyourgui.McTheme.outlineCut(drawContext, getX(), getY(), getX() + width, getY() + height, 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+            return;
+        }
         // mainpart
         drawContext.fill(getX() + 1, (int) (getY() + 1 + scrollAmount), getX() + width - 1, (int) (getY() + 1 + scrollAmount + scrollbarHeight), highlightColor);
 

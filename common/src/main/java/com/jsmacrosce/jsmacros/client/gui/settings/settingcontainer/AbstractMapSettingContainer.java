@@ -133,7 +133,7 @@ public abstract class AbstractMapSettingContainer<T, U extends AbstractMapSettin
         *///? } else {
         drawContext.drawString(textRenderer, settingName, (int) (x + width / 2F - textRenderer.width(settingName) / 2F + 20), y + 1, 0xFFFFFFFF, false);
         //? }
-        drawContext.fill(x, y + 10, x + width, y + 11, 0xFFFFFFFF);
+        drawContext.fill(x, y + 10, x + width, y + 11, com.jsmacrosce.wagyourgui.McTheme.LINE);
     }
 
     public static abstract class MapSettingEntry<T> extends MultiElementContainer<AbstractMapSettingContainer<T, MapSettingEntry<T>>> {
