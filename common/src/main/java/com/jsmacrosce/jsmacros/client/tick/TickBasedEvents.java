@@ -90,11 +90,12 @@ public class TickBasedEvents {
     public static void onTick(Minecraft mc) {
         if (JsMacrosClient.keyBinding.consumeClick() && GuiCompat.screen(mc) == null) {
             if (JsMacrosClient.prevScreen == null) {
-                JsMacrosClient.prevScreen = new KeyMacrosScreen(null);
+                JsMacrosClient.prevScreen = new com.jsmacrosce.jsmacros.client.gui.screens.ServiceScreen(null);
             }
             GuiCompat.setScreen(mc, JsMacrosClient.prevScreen);
         }
 
+        com.jsmacrosce.jsmacros.client.mcmacros.McServices.tick();
         FClient.tickSynchronizer.tick();
         serverListPinger.tick();
 

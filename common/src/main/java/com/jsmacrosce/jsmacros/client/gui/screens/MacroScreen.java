@@ -74,6 +74,14 @@ public class MacroScreen extends BaseScreen {
             openOverlay(new SettingsOverlay(this.width / 4, this.height / 4, this.width / 2, this.height / 2, font, this));
         }));
 
+        if (servicesOnly()) {
+            // McMacros only uses services: the key and event lists are hidden.
+            for (Button tab : new Button[]{keyScreen, eventScreen, serviceScreen}) {
+                tab.visible = false;
+                tab.active = false;
+            }
+        }
+
         topbar = createTopbar();
 
         topScroll = 40;
@@ -85,6 +93,11 @@ public class MacroScreen extends BaseScreen {
         }));
 
         aboutBtn = this.addRenderableWidget(new Button(this.width * 11 / 12, this.height - 12, this.width / 12, 12, font, 0, 0xFF000000, 0x7FFFFFFF, 0xFFFFFFFF, Component.translatable("jsmacrosce.about"), (btn) -> this.openOverlay(new AboutOverlay(this.width / 4, this.height / 4, this.width / 2, this.height / 2, font, this))));
+    }
+
+    /** McMacros shows only the service list; screens that return true hide the key and event tabs. */
+    protected boolean servicesOnly() {
+        return false;
     }
 
     protected MultiElementContainer<MacroScreen> createTopbar() {
@@ -239,15 +252,20 @@ public class MacroScreen extends BaseScreen {
             //? }
         }
         drawContext.fill(this.width * 5 / 6 - 1, 0, this.width * 5 / 6 + 1, 20, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(0, 20, width, 22, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        if (servicesOnly()) {
+            drawContext.drawString(this.font, "McMacros", 8, 6, com.jsmacrosce.wagyourgui.McTheme.ACCENT);
+            drawContext.drawString(this.font, Component.translatable("mcmacros.subtitle"), 8 + this.font.width("McMacros") + 10, 6, com.jsmacrosce.wagyourgui.McTheme.TEXT_DIM);
+        } else {
         drawContext.fill(this.width / 6 - 1, 0, this.width / 6 + 1, 20, com.jsmacrosce.wagyourgui.McTheme.LINE);
         drawContext.fill(this.width / 6 * 2, 0, this.width / 6 * 2 + 2, 20, com.jsmacrosce.wagyourgui.McTheme.LINE);
         drawContext.fill(this.width / 6 * 3 + 1, 0, this.width / 6 * 3 + 3, 20, com.jsmacrosce.wagyourgui.McTheme.LINE);
-        drawContext.fill(0, 20, width, 22, com.jsmacrosce.wagyourgui.McTheme.LINE);
         //? if >=26.1 {
         /*drawContext.centeredText(this.font, JsMacrosClient.clientCore.profile.getCurrentProfileName(), this.width * 8 / 12, 5, 0xFF7F7F7F);
         *///? } else {
         drawContext.drawCenteredString(this.font, JsMacrosClient.clientCore.profile.getCurrentProfileName(), this.width * 8 / 12, 5, 0xFF7F7F7F);
         //? }
+        }
 
         if (overlay != null) {
             //? if >=26.1 {

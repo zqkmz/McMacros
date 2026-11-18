@@ -19,7 +19,7 @@ public class ModMenuEntry implements ModMenuApi {
         @Override
         public BaseScreen create(Screen parent) {
             if (JsMacrosClient.prevScreen == null) {
-                JsMacrosClient.prevScreen = new KeyMacrosScreen(null);
+                JsMacrosClient.prevScreen = new com.jsmacrosce.jsmacros.client.gui.screens.ServiceScreen(null);
             }
 
             return JsMacrosClient.prevScreen;

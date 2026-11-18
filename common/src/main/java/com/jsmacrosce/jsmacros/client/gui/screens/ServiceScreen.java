@@ -1,6 +1,7 @@
 package com.jsmacrosce.jsmacros.client.gui.screens;
 
 import com.jsmacrosce.doclet.DocletIgnore;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.screens.Screen;
 import com.jsmacrosce.jsmacros.client.JsMacrosClient;
@@ -14,6 +15,10 @@ import com.jsmacrosce.wagyourgui.containers.MultiElementContainer;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+
+//? if >1.21.8 {
+/*import net.minecraft.client.input.KeyEvent;
+*///?}
 
 @DocletIgnore
 public class ServiceScreen extends MacroScreen {
@@ -33,6 +38,45 @@ public class ServiceScreen extends MacroScreen {
         for (String service : services) {
             addService(service);
         }
+    }
+
+    /** The row waiting for its new toggle key, or null. */
+    private ServiceContainer capturing;
+
+    @Override
+    protected boolean servicesOnly() {
+        return true;
+    }
+
+    /** Starts waiting for a key for the given row's toggle key. Delete or Backspace removes the key. */
+    public void startCapture(ServiceContainer row) {
+        if (capturing != null) capturing.setCapturing(false);
+        capturing = row;
+        row.setCapturing(true);
+    }
+
+    @Override
+    //? if >1.21.8 {
+    /*public boolean keyReleased(KeyEvent keyEvent) {
+        int keyCode = keyEvent.key();
+        String keyName = InputConstants.getKey(keyEvent).getName();
+    *///?} else {
+    public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
+        String keyName = InputConstants.getKey(keyCode, scanCode).getName();
+    //?}
+        if (capturing != null) {
+            ServiceContainer row = capturing;
+            capturing = null;
+            boolean clear = keyCode == InputConstants.KEY_DELETE || keyCode == InputConstants.KEY_BACKSPACE;
+            row.setToggleKey(clear ? "" : keyName);
+            JsMacrosClient.clientCore.services.save();
+            return true;
+        }
+        //? if >1.21.8 {
+        /*return super.keyReleased(keyEvent);
+        *///?} else {
+        return super.keyReleased(keyCode, scanCode, modifiers);
+        //?}
     }
 
     public void addService(String service) {

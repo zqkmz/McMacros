@@ -9,22 +9,41 @@ import com.jsmacrosce.jsmacros.client.JsMacrosClient;
 import com.jsmacrosce.jsmacros.client.gui.overlays.TextOverlay;
 import com.jsmacrosce.jsmacros.client.gui.screens.MacroScreen;
 import com.jsmacrosce.jsmacros.client.gui.screens.ServiceScreen;
+import com.jsmacrosce.jsmacros.client.mcmacros.McServices;
 import com.jsmacrosce.jsmacros.core.service.ServiceManager;
 import com.jsmacrosce.jsmacros.core.service.ServiceTrigger;
+import com.jsmacrosce.wagyourgui.McTheme;
 import com.jsmacrosce.wagyourgui.containers.MultiElementContainer;
 import com.jsmacrosce.wagyourgui.elements.Button;
 import com.jsmacrosce.wagyourgui.overlays.TextPrompt;
 
 import java.io.File;
 
+/**
+ * One row of the McMacros service list.
+ *
+ * <p>Columns (in twelfths of the row): name 2, file 4, toggle key 2, resume after rejoining 1,
+ * start with the game 1, status with running time 2, then the delete button.</p>
+ */
 @DocletIgnore
 public class ServiceContainer extends MultiElementContainer<MacroScreen> {
+    /** Column boundaries in twelfths of the row width. */
+    public static final int[] COLUMNS = {0, 2, 6, 8, 9, 10, 12};
+
+    private static final int ON = 0x702BD4AE;
+    private static final int ON_HOVER = 0x701A8F75;
+    private static final int OFF = 0x70C2405E;
+    private static final int OFF_HOVER = 0x70802A3E;
+
     public String service;
     protected Button nameBtn;
     protected Button fileBtn;
+    protected Button keyBtn;
+    protected Button resumeBtn;
     protected Button enableBtn;
     protected Button runningBtn;
     protected Button delBtn;
+    private boolean capturing = false;
 
     public ServiceContainer(int x, int y, int width, int height, Font textRenderer, ServiceScreen parent, String service) {
         super(x, y, width, height, textRenderer, parent);
@@ -32,12 +51,16 @@ public class ServiceContainer extends MultiElementContainer<MacroScreen> {
         init();
     }
 
+    /** Left edge of column {@code i} relative to the row. */
+    public static int col(int width, int i) {
+        return (width - 12) * COLUMNS[i] / 12;
+    }
+
     @Override
     public void init() {
         super.init();
 
-        int w = width - 12;
-        nameBtn = addRenderableWidget(new Button(x + 1, y + 1, w * 2 / 12 - 1, height - 2, textRenderer, 0, 0xFF000000, 0x7F7F7F7F, 0xFFFFFFFF, Component.literal(service), (btn) -> {
+        nameBtn = addRenderableWidget(new Button(0, 0, 1, 1, textRenderer, 0, 0xFF000000, 0x7F7F7F7F, 0xFFFFFFFF, Component.literal(service), (btn) -> {
             openOverlay(new TextPrompt(parent.width / 4, parent.height / 4, parent.width / 2, parent.height / 2, textRenderer, Component.translatable("jsmacrosce.servicerename.prompt"), service, getFirstOverlayParent(), (newService) -> {
                 if (!JsMacrosClient.clientCore.services.renameService(service, newService)) {
                     openOverlay(new TextOverlay(parent.width / 4, parent.height / 4, parent.width / 2, parent.height / 2, textRenderer, getFirstOverlayParent(), Component.translatable("jsmacrosce.servicerename.failed").withStyle(s -> s.withColor(ChatFormatting.RED))));
@@ -48,39 +71,74 @@ public class ServiceContainer extends MultiElementContainer<MacroScreen> {
             }));
         }));
 
-        fileBtn = addRenderableWidget(new Button(x + w * 2 / 12 + 1, y + 1, w * 8 / 12 - 1, height - 2, textRenderer, 0, 0xFF000000, 0x7F7F7F7F, 0xFFFFFFFF, Component.literal("./" + getTrigger().file.toString().replaceAll("\\\\", "/")), (btn) -> {
-            parent.setFile(this);
+        fileBtn = addRenderableWidget(new Button(0, 0, 1, 1, textRenderer, 0, 0xFF000000, 0x7F7F7F7F, 0xFFFFFFFF, fileText(), (btn) -> parent.setFile(this)));
+
+        keyBtn = addRenderableWidget(new Button(0, 0, 1, 1, textRenderer, 0, 0xFF000000, 0x7F7F7F7F, 0xFFFFFFFF, keyText(), (btn) -> {
+            ((ServiceScreen) parent).startCapture(this);
         }));
 
-        boolean enabled = getEnabled();
-        boolean running = getRunning();
+        resumeBtn = addRenderableWidget(new Button(0, 0, 1, 1, textRenderer, 0, 0xFF000000, 0, 0xFFFFFFFF, Component.empty(), (btn) -> {
+            ServiceTrigger t = getTrigger();
+            t.resumeOnJoin = !t.isResumeOnJoin();
+            updateButtons();
+        }));
 
-        enableBtn = addRenderableWidget(new Button(x + w * 10 / 12 + 1, y + 1, w / 12, height - 2, textRenderer, enabled ? 0x7000FF00 : 0x70FF0000, 0xFF000000, enabled ? 0x70007000 : 0x70700000, 0xFFFFFFFF, Component.translatable("jsmacrosce." + (enabled ? "enabled" : "disabled")), (btn) -> {
+        enableBtn = addRenderableWidget(new Button(0, 0, 1, 1, textRenderer, 0, 0xFF000000, 0, 0xFFFFFFFF, Component.empty(), (btn) -> {
             if (getEnabled()) {
                 JsMacrosClient.clientCore.services.disableService(service);
-                btn.setColor(0x70FF0000);
-                btn.setHighlightColor(0x70700000);
-                btn.setMessage(Component.translatable("jsmacrosce.disabled"));
             } else {
                 JsMacrosClient.clientCore.services.enableService(service);
-                btn.setColor(0x7000FF00);
-                btn.setHighlightColor(0x70007000);
-                btn.setMessage(Component.translatable("jsmacrosce.enabled"));
             }
+            updateButtons();
         }));
 
-        runningBtn = addRenderableWidget(new Button(x + w * 11 / 12 + 1, y + 1, w / 12, height - 2, textRenderer, running ? 0x7000FF00 : 0x70FF0000, 0xFF000000, running ? 0x70007000 : 0x70700000, 0xFFFFFFFF, Component.translatable("jsmacrosce." + (running ? "running" : "stopped")), (btn) -> {
-            if (getRunning()) {
-                JsMacrosClient.clientCore.services.stopService(service);
-            } else {
-                JsMacrosClient.clientCore.services.startService(service);
-            }
-        }));
+        runningBtn = addRenderableWidget(new Button(0, 0, 1, 1, textRenderer, 0, 0xFF000000, 0, 0xFFFFFFFF, Component.empty(), (btn) -> McServices.toggle(service)));
 
-        delBtn = addRenderableWidget(new Button(x + w - 1, y + 1, 12, height - 2, textRenderer, 0, 0xFF000000, 0x7F7F7F7F, 0xFFFFFFFF, Component.literal("X"), (btn) -> {
+        delBtn = addRenderableWidget(new Button(0, 0, 1, 1, textRenderer, 0, 0xFF000000, 0x7F7F7F7F, 0xFFFFFFFF, Component.literal("X"), (btn) -> {
             parent.confirmRemoveMacro(this);
         }));
 
+        setPos(x, y, width, height);
+        updateButtons();
+    }
+
+    private Component fileText() {
+        return Component.literal("./" + getTrigger().file.toString().replaceAll("\\\\", "/"));
+    }
+
+    private Component keyText() {
+        if (capturing) return Component.translatable("jsmacrosce.presskey");
+        String key = getTrigger().getToggleKey();
+        if (key.isEmpty()) return Component.translatable("mcmacros.key.none").withStyle(ChatFormatting.DARK_GRAY);
+        return JsMacrosClient.getKeyText(key);
+    }
+
+    private static void paint(Button btn, boolean on) {
+        btn.setColor(on ? ON : OFF);
+        btn.setHighlightColor(on ? ON_HOVER : OFF_HOVER);
+    }
+
+    /** Refreshes the labels and colours of the toggle buttons. */
+    public void updateButtons() {
+        ServiceTrigger t = getTrigger();
+        paint(resumeBtn, t.isResumeOnJoin());
+        resumeBtn.setMessage(Component.translatable(t.isResumeOnJoin() ? "mcmacros.on" : "mcmacros.off"));
+        boolean enabled = getEnabled();
+        paint(enableBtn, enabled);
+        enableBtn.setMessage(Component.translatable(enabled ? "mcmacros.on" : "mcmacros.off"));
+        keyBtn.setMessage(keyText());
+    }
+
+    /** Called by the screen while this row waits for a key. */
+    public void setCapturing(boolean capturing) {
+        this.capturing = capturing;
+        keyBtn.setMessage(keyText());
+    }
+
+    /** Stores the new toggle key; an empty string removes it. */
+    public void setToggleKey(String key) {
+        getTrigger().toggleKey = key.isEmpty() ? null : key;
+        setCapturing(false);
     }
 
     public boolean getEnabled() {
@@ -100,18 +158,20 @@ public class ServiceContainer extends MultiElementContainer<MacroScreen> {
     public void setFile(File file) {
         getTrigger().file = JsMacrosClient.clientCore.config.macroFolder.getAbsoluteFile().toPath().relativize(file.getAbsoluteFile().toPath());
         JsMacrosClient.clientCore.services.disableReload(service);
-        fileBtn.setMessage(Component.literal("./" + getTrigger().file.toString().replaceAll("\\\\", "/")));
+        fileBtn.setMessage(fileText());
     }
 
     @Override
     public void setPos(int x, int y, int width, int height) {
         super.setPos(x, y, width, height);
-        int w = width - 12;
-        nameBtn.setPos(x + 1, y + 1, w * 2 / 12 - 1, height - 2);
-        fileBtn.setPos(x + w * 2 / 12 + 1, y + 1, w * 8 / 12 - 1, height - 2);
-        enableBtn.setPos(x + w * 10 / 12 + 1, y + 1, w / 12, height - 2);
-        runningBtn.setPos(x + w * 11 / 12 + 1, y + 1, w / 12, height - 2);
-        delBtn.setPos(x + w - 1, y + 1, 12, height - 2);
+        Button[] cells = {nameBtn, fileBtn, keyBtn, resumeBtn, enableBtn, runningBtn};
+        for (int i = 0; i < cells.length; i++) {
+            if (cells[i] == null) continue;
+            int left = col(width, i);
+            int right = col(width, i + 1);
+            cells[i].setPos(x + left + 1, y + 1, right - left - 1, height - 2);
+        }
+        if (delBtn != null) delBtn.setPos(x + width - 13, y + 1, 12, height - 2);
     }
 
     @Override
@@ -120,26 +180,24 @@ public class ServiceContainer extends MultiElementContainer<MacroScreen> {
     *///? } else {
     public void render(final GuiGraphics drawContext, int mouseX, int mouseY, final float delta) {
     //? }
-        int w = width - 12;
-        //seperate
-        drawContext.fill(x + w * 2 / 12, y + 1, x + w * 2 / 12 + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
-        drawContext.fill(x + w * 10 / 12, y + 1, x + w * 10 / 12 + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
-        drawContext.fill(x + w * 11 / 12, y + 1, x + w * 11 / 12 + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
-        drawContext.fill(x + width - 14, y + 1, x + width - 13, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        // column separators
+        for (int i = 1; i < COLUMNS.length; i++) {
+            int cx = x + col(width, i);
+            drawContext.fill(cx, y + 1, cx + 1, y + height - 1, McTheme.LINE);
+        }
 
         // border
-        drawContext.fill(x, y, x + width, y + 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
-        drawContext.fill(x, y + height - 1, x + width, y + height, com.jsmacrosce.wagyourgui.McTheme.LINE);
-        drawContext.fill(x, y + 1, x + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
-        drawContext.fill(x + width - 1, y + 1, x + width, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        drawContext.fill(x, y, x + width, y + 1, McTheme.LINE);
+        drawContext.fill(x, y + height - 1, x + width, y + height, McTheme.LINE);
+        drawContext.fill(x, y + 1, x + 1, y + height - 1, McTheme.LINE);
+        drawContext.fill(x + width - 1, y + 1, x + width, y + height - 1, McTheme.LINE);
 
-        if (getRunning()) {
-            runningBtn.setColor(0x7000FF00);
-            runningBtn.setHighlightColor(0x70007000);
-            runningBtn.setMessage(Component.translatable("jsmacrosce.running"));
+        boolean running = getRunning();
+        paint(runningBtn, running);
+        if (running) {
+            long ms = McServices.runningMillis(service);
+            runningBtn.setMessage(Component.translatable("mcmacros.running.time", ms < 0 ? "0:00" : McServices.formatDuration(ms)));
         } else {
-            runningBtn.setColor(0x70FF0000);
-            runningBtn.setHighlightColor(0x70700000);
             runningBtn.setMessage(Component.translatable("jsmacrosce.stopped"));
         }
     }

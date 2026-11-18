@@ -3,6 +3,11 @@ package com.jsmacrosce.jsmacros.fabric.client;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+//? if <26.1 {
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.minecraft.resources.ResourceLocation;
+import com.jsmacrosce.jsmacros.client.mcmacros.McHud;
+//?}
 //? if >=26.1 {
 /*import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 *///? } else {
@@ -27,6 +32,9 @@ public class JsMacrosFabric implements ModInitializer, ClientModInitializer {
         KeyBindingHelper.registerKeyBinding(JsMacrosClient.keyBinding);
         //?}
         CommandBuilderFabric.registerEvent();
+        //? if <26.1 {
+        HudElementRegistry.addLast(ResourceLocation.fromNamespaceAndPath("mcmacros", "running_services"), (graphics, deltaTracker) -> McHud.render(graphics));
+        //?}
     }
 
     @Override

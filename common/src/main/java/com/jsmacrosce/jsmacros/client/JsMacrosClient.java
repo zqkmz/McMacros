@@ -70,6 +70,7 @@ public class JsMacrosClient extends JsMacros {
             clientCore.services.startReloadListener();
         }
         PacketByteBufferHelper.init();
+        com.jsmacrosce.jsmacros.client.mcmacros.McServices.init();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> new EventQuitGame().trigger()));
     }
 

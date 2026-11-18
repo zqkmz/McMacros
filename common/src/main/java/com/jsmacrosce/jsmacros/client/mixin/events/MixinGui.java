@@ -59,7 +59,7 @@ public abstract class MixinGui {
     @Inject(at = @At(value = "FIELD", target = "Lnet/minecraft/client/gui/Gui;screen:Lnet/minecraft/client/gui/screens/Screen;", opcode = Opcodes.PUTFIELD), method = "setScreen")
     public void onOpenScreen(@Nullable Screen newScreen, CallbackInfo info) {
         if (jsmacros$prevScreen == null) {
-            jsmacros$prevScreen = new KeyMacrosScreen(null);
+            jsmacros$prevScreen = new com.jsmacrosce.jsmacros.client.gui.screens.ServiceScreen(null);
         }
 
         if (newScreen != screen()) {

@@ -83,5 +83,16 @@
   "jsmacrosce.servicerename.prompt": "Enter new service name",
   "jsmacrosce.servicerename.failed": "Failed to rename service",
   "jsmacrosce.cancelscreen": "Running scripts",
-  "jsmacrosce.editor": "Editor"
+  "jsmacrosce.editor": "Editor",
+  "mcmacros.toggle.started": "▶ Started %s",
+  "mcmacros.toggle.stopped": "■ Stopped %s",
+  "mcmacros.resumed": "Rejoined, so these were started again: %s",
+  "mcmacros.key.none": "None",
+  "mcmacros.on": "ON",
+  "mcmacros.off": "OFF",
+  "mcmacros.running.time": "▶ %s",
+  "mcmacros.header.key": "Key",
+  "mcmacros.header.resume": "Resume",
+  "mcmacros.header.autostart": "On launch",
+  "mcmacros.subtitle": "Services"
 }

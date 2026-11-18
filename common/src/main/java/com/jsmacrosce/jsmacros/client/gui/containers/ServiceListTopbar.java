@@ -26,35 +26,32 @@ public class ServiceListTopbar extends MultiElementContainer<ServiceScreen> {
     @Override
     public void init() {
         super.init();
+        ClientConfigV2 cfg = JsMacrosClient.clientCore.config.getOptions(ClientConfigV2.class);
 
-        int w = width - 12;
+        header(0, Component.translatable("jsmacrosce.servicename"), cfg.sortServicesMethod == Sorting.ServiceSortMethod.Name, () -> cfg.sortServicesMethod = Sorting.ServiceSortMethod.Name);
+        header(1, Component.translatable("jsmacrosce.file"), cfg.sortServicesMethod == Sorting.ServiceSortMethod.FileName, () -> cfg.sortServicesMethod = Sorting.ServiceSortMethod.FileName);
+        header(2, Component.translatable("mcmacros.header.key"), false, null);
+        header(3, Component.translatable("mcmacros.header.resume"), false, null);
+        header(4, Component.translatable("mcmacros.header.autostart"), cfg.sortServicesMethod == Sorting.ServiceSortMethod.Enabled, () -> cfg.sortServicesMethod = Sorting.ServiceSortMethod.Enabled);
+        header(5, Component.translatable("jsmacrosce.runningstatus"), cfg.sortServicesMethod == Sorting.ServiceSortMethod.Running, () -> cfg.sortServicesMethod = Sorting.ServiceSortMethod.Running);
 
-        addRenderableWidget(new Button(x + 1, y + 1, w * 2 / 12 - 1, height - 3, textRenderer, JsMacrosClient.clientCore.config.getOptions(ClientConfigV2.class).sortServicesMethod == Sorting.ServiceSortMethod.Name ? 0x3FFFFFFF : 0, 0xFF000000, 0x7F7F7F7F, 0xFFFFFFFF, Component.translatable("jsmacrosce.servicename"), (btn) -> {
-            JsMacrosClient.clientCore.config.getOptions(ClientConfigV2.class).sortServicesMethod = Sorting.ServiceSortMethod.Name;
-            parent.reload();
-        }));
-
-        addRenderableWidget(new Button(x + w * 2 / 12 + 1, y + 1, w * 8 / 12 - 1, height - 3, textRenderer, JsMacrosClient.clientCore.config.getOptions(ClientConfigV2.class).sortServicesMethod == Sorting.ServiceSortMethod.FileName ? 0x3FFFFFFF : 0, 0xFF000000, 0x7F7F7F7F, 0xFFFFFFFF, Component.translatable("jsmacrosce.file"), (btn) -> {
-            JsMacrosClient.clientCore.config.getOptions(ClientConfigV2.class).sortServicesMethod = Sorting.ServiceSortMethod.FileName;
-            parent.reload();
-        }));
-
-        addRenderableWidget(new Button(x + w * 10 / 12 + 1, y + 1, w / 12, height - 3, textRenderer, JsMacrosClient.clientCore.config.getOptions(ClientConfigV2.class).sortServicesMethod == Sorting.ServiceSortMethod.Enabled ? 0x3FFFFFFF : 0, 0xFF000000, 0x7F7F7F7F, 0xFFFFFFFF, Component.translatable("jsmacrosce.enabledstatus"), (btn) -> {
-            JsMacrosClient.clientCore.config.getOptions(ClientConfigV2.class).sortServicesMethod = Sorting.ServiceSortMethod.Enabled;
-            parent.reload();
-        }));
-
-        addRenderableWidget(new Button(x + w * 11 / 12 + 1, y + 1, w / 12, height - 3, textRenderer, JsMacrosClient.clientCore.config.getOptions(ClientConfigV2.class).sortServicesMethod == Sorting.ServiceSortMethod.Running ? 0x3FFFFFFF : 0, 0xFF000000, 0x7F7F7F7F, 0xFFFFFFFF, Component.translatable("jsmacrosce.runningstatus"), (btn) -> {
-            JsMacrosClient.clientCore.config.getOptions(ClientConfigV2.class).sortServicesMethod = Sorting.ServiceSortMethod.Running;
-            parent.reload();
-        }));
-
-        addRenderableWidget(new Button(x + w - 1, y + 1, 11, height - 3, textRenderer, 0, 0xFF000000, 0x7F7F7F7F, 0xFFFFFFFF, Component.literal("+"), (btn) -> {
+        addRenderableWidget(new Button(x + width - 13, y + 1, 12, height - 3, textRenderer, 0, 0xFF000000, 0x7F7F7F7F, 0xFFFFFFFF, Component.literal("+"), (btn) -> {
             openOverlay(new TextPrompt(parent.width / 4, parent.height / 4, parent.width / 2, parent.height / 2, textRenderer, Component.translatable("jsmacrosce.servicename"), "", getFirstOverlayParent(), (name) -> {
                 if (JsMacrosClient.clientCore.services.registerService(name, new ServiceTrigger(Path.of(".").normalize(), false))) {
                     parent.addService(name);
                 }
             }));
+        }));
+    }
+
+    /** One column header; clicking a sortable header sorts the list by that column. */
+    private void header(int column, Component label, boolean selected, Runnable sort) {
+        int left = ServiceContainer.col(width, column);
+        int right = ServiceContainer.col(width, column + 1);
+        addRenderableWidget(new Button(x + left + 1, y + 1, right - left - 1, height - 3, textRenderer, selected ? 0x3FFFFFFF : 0, 0xFF000000, sort == null ? 0 : 0x7F7F7F7F, 0xFFFFFFFF, label, (btn) -> {
+            if (sort == null) return;
+            sort.run();
+            parent.reload();
         }));
     }
 
@@ -69,12 +66,10 @@ public class ServiceListTopbar extends MultiElementContainer<ServiceScreen> {
         drawContext.fill(x, y + height - 1, x + width, y + height, com.jsmacrosce.wagyourgui.McTheme.LINE);
         drawContext.fill(x, y + 1, x + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
         drawContext.fill(x + width - 1, y + 1, x + width, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
-        int w = this.width - 12;
-
-        drawContext.fill(x + w * 2 / 12, y + 1, x + w * 2 / 12 + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
-        drawContext.fill(x + w * 10 / 12, y + 1, x + w * 10 / 12 + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
-        drawContext.fill(x + w * 11 / 12, y + 1, x + w * 11 / 12 + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
-        drawContext.fill(x + width - 14, y + 1, x + width - 13, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        for (int i = 1; i < ServiceContainer.COLUMNS.length; i++) {
+            int cx = x + ServiceContainer.col(width, i);
+            drawContext.fill(cx, y + 1, cx + 1, y + height - 1, com.jsmacrosce.wagyourgui.McTheme.LINE);
+        }
     }
 
 }

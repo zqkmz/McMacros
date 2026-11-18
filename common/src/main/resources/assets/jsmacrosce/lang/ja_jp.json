@@ -27,7 +27,7 @@
   "jsmacrosce.disabled": "無効",
   "jsmacrosce.presskey": "- キーを押してください -",
   "jsmacrosce.run": "実行",
-  "jsmacrosce.runningstatus": "動作中",
+  "jsmacrosce.runningstatus": "状態",
   "jsmacrosce.running": "動作中",
   "jsmacrosce.stopped": "停止中",
   "jsmacrosce.disablewithscreen": "画面（GUI）を開いている間はキーのマクロを動かさない",
@@ -83,5 +83,16 @@
   "jsmacrosce.servicerename.prompt": "新しいサービス名を入力してください",
   "jsmacrosce.servicerename.failed": "サービスの名前を変更できませんでした",
   "jsmacrosce.cancelscreen": "動作中のスクリプト",
-  "jsmacrosce.editor": "エディタ"
+  "jsmacrosce.editor": "エディタ",
+  "mcmacros.toggle.started": "▶ %s を開始しました",
+  "mcmacros.toggle.stopped": "■ %s を停止しました",
+  "mcmacros.resumed": "入り直したので再開しました：%s",
+  "mcmacros.key.none": "なし",
+  "mcmacros.on": "ON",
+  "mcmacros.off": "OFF",
+  "mcmacros.running.time": "▶ %s",
+  "mcmacros.header.key": "キー",
+  "mcmacros.header.resume": "再開",
+  "mcmacros.header.autostart": "起動時",
+  "mcmacros.subtitle": "サービス"
 }
