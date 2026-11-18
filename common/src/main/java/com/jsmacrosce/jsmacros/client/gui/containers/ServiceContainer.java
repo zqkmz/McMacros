@@ -170,8 +170,13 @@ public class ServiceContainer extends MultiElementContainer<MacroScreen> {
             int left = col(width, i);
             int right = col(width, i + 1);
             cells[i].setPos(x + left + 1, y + 1, right - left - 1, height - 2);
+            // Buttons lay out their label only when it is set, so set it again for the new size.
+            cells[i].setMessage(cells[i].getMessage());
         }
-        if (delBtn != null) delBtn.setPos(x + width - 13, y + 1, 12, height - 2);
+        if (delBtn != null) {
+            delBtn.setPos(x + width - 13, y + 1, 12, height - 2);
+            delBtn.setMessage(delBtn.getMessage());
+        }
     }
 
     @Override
